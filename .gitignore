@@ -52,13 +52,24 @@ llama-server.pid
 *.pem
 *.p12
 *.pfx
-secrets.*
+# Data-file extensions only: a bare `secrets.*` would also hide src/secrets.rs.
+secrets.json
+secrets.toml
+secrets.yaml
+secrets.yml
+secrets.env
 credentials*.json
-*api_key*
-*apikey*
-t212*.json
-t212*.toml
+*api_key*.json
+*api_key*.txt
+*apikey*.json
+*apikey*.txt
+/t212*.json
+/t212*.toml
 settings.local.*
+
+# Never ignore source code, tests or fixtures, whatever the rules above match.
+!/src/**
+!/tests/**
 
 # --- Generated reports -------------------------------------------------------
 reports/
