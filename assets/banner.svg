@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="320" viewBox="0 0 1280 320" role="img" aria-label="Aura Portfolio — Portfolio intelligence, powered by local AI">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0A0E17"/>
+      <stop offset="1" stop-color="#111724"/>
+    </linearGradient>
+    <linearGradient id="aurora" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2DD4BF"/>
+      <stop offset="1" stop-color="#8B5CF6"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.78" cy="0.2" r="0.7">
+      <stop offset="0" stop-color="#8B5CF6" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#8B5CF6" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1280" height="320" rx="24" fill="url(#bg)"/>
+  <rect width="1280" height="320" rx="24" fill="url(#glow)"/>
+  <path d="M0 250 C 220 200, 380 270, 600 210 S 980 120, 1280 150" fill="none" stroke="url(#aurora)" stroke-width="3" opacity="0.55"/>
+  <g transform="translate(96 96)">
+    <rect width="128" height="128" rx="31" fill="url(#aurora)"/>
+    <rect x="30" y="64" width="18" height="36" rx="6" fill="#fff"/>
+    <rect x="55" y="46" width="18" height="54" rx="6" fill="#fff"/>
+    <rect x="80" y="26" width="18" height="74" rx="6" fill="#fff"/>
+  </g>
+  <text x="264" y="160" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="64" font-weight="700" fill="#E6EAF2">Aura Portfolio</text>
+  <text x="266" y="206" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="24" fill="#8A94A8">Trading212 analytics · private, local AI · 100% Rust</text>
+</svg>

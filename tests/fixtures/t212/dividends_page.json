@@ -1,0 +1,45 @@
+{
+  "items": [
+    {
+      "amount": 3.40,
+      "amountInEuro": 3.95,
+      "currency": "GBP",
+      "grossAmountPerShare": 0.25,
+      "instrument": { "currency": "USD", "isin": "US0378331005", "name": "Apple Inc", "ticker": "AAPL_US_EQ" },
+      "paidOn": "2026-08-14T00:00:00Z",
+      "quantity": 20,
+      "reference": "div-aapl-2026-08",
+      "ticker": "AAPL_US_EQ",
+      "tickerCurrency": "USD",
+      "type": "DIVIDENDS_PAID_BY_US_CORPORATIONS"
+    },
+    {
+      "amount": 3.40,
+      "amountInEuro": 3.98,
+      "currency": "GBP",
+      "grossAmountPerShare": 0.25,
+      "instrument": { "currency": "USD", "isin": "US0378331005", "name": "Apple Inc", "ticker": "AAPL_US_EQ" },
+      "paidOn": "2026-05-15T00:00:00Z",
+      "quantity": 20,
+      "reference": "div-aapl-2026-05",
+      "ticker": "AAPL_US_EQ",
+      "tickerCurrency": "USD",
+      "type": "DIVIDENDS_PAID_BY_US_CORPORATIONS"
+    },
+    {
+      "amount": 24.08,
+      "amountInEuro": 28.10,
+      "currency": "GBP",
+      "grossAmountPerShare": 30.0,
+      "instrument": { "currency": "GBX", "isin": "IE00B3XXRP09", "name": "Vanguard S&P 500 UCITS ETF", "ticker": "VUSAl_EQ" },
+      "paidOn": "2026-09-24T00:00:00Z",
+      "quantity": 80.25,
+      "reference": "div-vusa-2026-09",
+      "ticker": "VUSAl_EQ",
+      "tickerCurrency": "GBX",
+      "type": "ORDINARY",
+      "someFutureField": "ignored"
+    }
+  ],
+  "nextPagePath": "/api/v0/equity/history/dividends?limit=50&cursor=987654321"
+}

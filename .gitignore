@@ -1,0 +1,88 @@
+# ============================================================================
+#  Aura Portfolio — .gitignore
+#  NOTE: Cargo.lock is intentionally COMMITTED (this is an application).
+# ============================================================================
+
+# --- Rust / Cargo ------------------------------------------------------------
+/target/
+**/target/
+**/*.rs.bk
+*.pdb
+*.profraw
+*.profdata
+/dist/
+/release-artifacts/
+
+# --- Local app data (portable mode writes next to the executable) ------------
+aura-data/
+/data/
+/runtime/
+/models/
+/logs/
+*.log
+
+# --- Local LLM artefacts: models, runtimes, partial downloads ----------------
+*.gguf
+*.gguf.part
+*.ggml
+*.safetensors
+*.part
+*.partial
+llama.cpp/
+llama-*/
+llama-server
+llama-server.exe
+llama-cli
+llama-cli.exe
+ggml*.dll
+llama*.dll
+cudart*.dll
+cublas*.dll
+libggml*.so*
+libllama*.so*
+libggml*.dylib
+libllama*.dylib
+llama-server.pid
+
+# --- Secrets & credentials (T212 keys live in the OS keychain, never here) ---
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+secrets.*
+credentials*.json
+*api_key*
+*apikey*
+t212*.json
+t212*.toml
+settings.local.*
+
+# --- Generated reports -------------------------------------------------------
+reports/
+*.pdf
+!docs/**/*.pdf
+
+# --- IDEs / editors ----------------------------------------------------------
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.iml
+*.swp
+*.swo
+*~
+.fleet/
+.zed/
+
+# --- OS junk -----------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+$RECYCLE.BIN/
+
+# --- Claude Code local state -------------------------------------------------
+.claude/settings.local.json

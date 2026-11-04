@@ -1,0 +1,34 @@
+[
+  {
+    "averagePricePaid": 150.0,
+    "createdAt": "2024-03-01T14:30:00.000Z",
+    "currentPrice": 200.0,
+    "instrument": { "currency": "USD", "isin": "US0378331005", "name": "Apple Inc", "ticker": "AAPL_US_EQ" },
+    "quantity": 20,
+    "quantityAvailableForTrading": 20,
+    "quantityInPies": 0,
+    "walletImpact": {
+      "currency": "GBP",
+      "currentValue": 3200.0,
+      "fxImpact": -40.5,
+      "totalCost": 2400.0,
+      "unrealizedProfitLoss": 800.0
+    }
+  },
+  {
+    "averagePricePaid": 8500.0,
+    "createdAt": "2023-11-10T09:00:00+00:00",
+    "currentPrice": 9100.0,
+    "instrument": { "currency": "GBX", "isin": "IE00B3XXRP09", "name": "Vanguard S&P 500 UCITS ETF", "ticker": "VUSAl_EQ" },
+    "quantity": 80.25,
+    "quantityAvailableForTrading": 80.25,
+    "quantityInPies": 0,
+    "walletImpact": {
+      "currency": "GBP",
+      "currentValue": 7280.20,
+      "fxImpact": null,
+      "totalCost": 6800.0,
+      "unrealizedProfitLoss": 480.20
+    }
+  }
+]

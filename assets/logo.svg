@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-label="Aura Portfolio logo">
+  <defs>
+    <linearGradient id="aurora" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2DD4BF"/>
+      <stop offset="1" stop-color="#8B5CF6"/>
+    </linearGradient>
+  </defs>
+  <!-- Mirrors ui::theme::app_icon: radius 0.24, bars 0.14 wide, gap 0.07, baseline 0.78 -->
+  <rect width="256" height="256" rx="61" fill="url(#aurora)"/>
+  <rect x="56.3"  y="128"   width="35.8" height="71.7"  rx="12.5" fill="#fff"/>
+  <rect x="110.1" y="92.2"  width="35.8" height="107.5" rx="12.5" fill="#fff"/>
+  <rect x="163.8" y="51.2"  width="35.8" height="148.5" rx="12.5" fill="#fff"/>
+</svg>
