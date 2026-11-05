@@ -69,7 +69,7 @@ pub fn show(ui: &mut Ui, portfolio: &PortfolioService, state: &PortfolioState) {
             };
             kpi(
                 &mut c[3],
-                "🧾",
+                "%",
                 "Avg. tax withheld",
                 &value,
                 &caption,
@@ -85,7 +85,7 @@ pub fn show(ui: &mut Ui, portfolio: &PortfolioService, state: &PortfolioState) {
             kpi(&mut c[0], "💼", "Portfolio value", &dash, hint, ACCENT);
             kpi(&mut c[1], "📈", "Total return", &dash, hint, POSITIVE);
             kpi(&mut c[2], "💰", "Dividends received", &dash, hint, GOLD);
-            kpi(&mut c[3], "🧾", "Avg. tax withheld", &dash, hint, VIOLET);
+            kpi(&mut c[3], "%", "Avg. tax withheld", &dash, hint, VIOLET);
         }
     });
     ui.add_space(14.0);
@@ -124,7 +124,7 @@ pub fn show(ui: &mut Ui, portfolio: &PortfolioService, state: &PortfolioState) {
         );
         kpi(
             &mut c[3],
-            "🥇",
+            "⭐",
             "Gold (XAU/USD)",
             &dash,
             "spot · phase 3",

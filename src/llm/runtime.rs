@@ -317,9 +317,12 @@ mod tests {
                 "llama-b9999-bin-win-cuda-12.4-x64.zip",
                 "llama-b9999-bin-win-vulkan-x64.zip",
                 "llama-b9999-bin-win-cpu-x64.zip",
+                "llama-b9999-bin-win-cpu-arm64.zip",
                 "llama-b9999-bin-macos-arm64.zip",
+                "llama-b9999-bin-macos-x64.zip",
                 "llama-b9999-bin-ubuntu-x64.zip",
                 "llama-b9999-bin-ubuntu-vulkan-x64.zip",
+                "llama-b9999-bin-ubuntu-arm64.zip",
             ]
             .into_iter()
             .map(asset)
@@ -352,6 +355,30 @@ mod tests {
             cuda_version_token("llama-b1-bin-win-cuda-12.4-x64.zip").as_deref(),
             Some("cuda-12.4")
         );
+    }
+
+    /// Runs on every CI platform: whatever this target is, a CPU-only
+    /// machine must resolve to exactly one asset matched by its own rules.
+    #[test]
+    fn current_platform_resolves_an_asset() {
+        let rel = release();
+        let machine = hw(false, false);
+        let (backend, assets) = select_assets(&rel, &machine).unwrap();
+        assert_eq!(assets.len(), 1);
+        let rules = asset_rules(&machine);
+        assert!(
+            rules
+                .iter()
+                .any(|r| r.backend == backend && r.matches(&assets[0].name))
+        );
+    }
+
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    #[test]
+    fn apple_silicon_uses_metal() {
+        let (backend, assets) = select_assets(&release(), &hw(false, false)).unwrap();
+        assert_eq!(backend, Backend::Metal);
+        assert_eq!(assets[0].name, "llama-b9999-bin-macos-arm64.zip");
     }
 
     #[cfg(all(windows, target_arch = "x86_64"))]

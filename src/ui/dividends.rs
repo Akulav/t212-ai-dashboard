@@ -66,14 +66,7 @@ pub fn show(ui: &mut Ui, portfolio: &PortfolioService, state: &PortfolioState) {
             ),
             None => ("—".into(), "not enough data".into()),
         };
-        kpi(
-            &mut c[2],
-            "🧾",
-            "Avg. tax withheld",
-            &rate,
-            &caption,
-            VIOLET,
-        );
+        kpi(&mut c[2], "%", "Avg. tax withheld", &rate, &caption, VIOLET);
         kpi(
             &mut c[3],
             "🔮",
@@ -104,6 +97,7 @@ pub fn show(ui: &mut Ui, portfolio: &PortfolioService, state: &PortfolioState) {
             if view.analytics.upcoming.is_empty() {
                 ui.label(RichText::new("Nothing projected yet.").color(MUTED));
             }
+            widgets::table_mode(ui);
             egui::Grid::new("upcoming_grid").num_columns(4).spacing([14.0, 6.0]).striped(true).show(ui, |ui| {
                 for u in &view.analytics.upcoming {
                     ui.label(RichText::new(u.expected_on.format("%a %d %b").to_string()).monospace().color(GOLD));
@@ -142,6 +136,7 @@ pub fn show(ui: &mut Ui, portfolio: &PortfolioService, state: &PortfolioState) {
             &format!("Payment history · {} total", view.dividend_count),
         );
         ui.add_space(6.0);
+        widgets::table_mode(ui);
         egui::Grid::new("dividend_history")
             .num_columns(6)
             .spacing([18.0, 6.0])

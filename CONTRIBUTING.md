@@ -118,6 +118,12 @@ Keep the catalog ordered by size, because `recommend()` relies on it. Then run `
 Add an `AssetRule` in `llm/runtime.rs::asset_rules` (e.g. ROCm/HIP for AMD on Windows), with a detection
 flag in `HardwareProfile` if needed, and extend the `select_assets` tests with the real asset name.
 
+## Demo mode & screenshots
+
+- `AURA_DEMO=1` swaps the Trading212 sync for the synthetic portfolio in `src/portfolio/demo.rs`. It makes no network, keychain or cache access, so it's ideal for UI work.
+- `AURA_PAGE=dashboard|holdings|dividends|insights|ai|settings` sets the start page.
+- `scripts/screenshots.ps1 [-Release]` (Windows) rebuilds the app, captures each page into `docs/screenshots/`, and uses a throwaway data folder. Re-run it after any visible UI change.
+
 ## Releasing
 
 1. Bump `version` in `Cargo.toml` (and run `cargo check` so `Cargo.lock` updates).

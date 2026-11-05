@@ -70,7 +70,7 @@ impl HoldingsPage {
             );
             widgets::kpi(
                 &mut c[1],
-                "🧮",
+                "🏷",
                 "Cost basis",
                 &format::money(inv.total_cost, ccy),
                 "open positions",
@@ -131,6 +131,8 @@ impl HoldingsPage {
                 };
                 if self.descending { ord.reverse() } else { ord }
             });
+
+            widgets::table_mode(ui);
 
             egui::Grid::new("holdings_grid")
                 .num_columns(8)

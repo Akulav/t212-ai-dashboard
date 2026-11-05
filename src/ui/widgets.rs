@@ -21,6 +21,13 @@ pub fn card<R>(ui: &mut Ui, add_contents: impl FnOnce(&mut Ui) -> R) -> R {
         .inner
 }
 
+/// Prepares `ui` for a data table: cells never wrap (money stays on one
+/// line) and the enclosing card stretches to the full available width.
+pub fn table_mode(ui: &mut Ui) {
+    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+    ui.set_min_width(ui.available_width());
+}
+
 /// Small upper-case section label.
 pub fn section_title(ui: &mut Ui, text: &str) {
     ui.label(
@@ -145,7 +152,9 @@ pub fn sparkline(ui: &mut Ui, values: &[f32], max: f32, color: Color32, height: 
 /// Compact telemetry readout for the footer: `LLM  RAM 4.1 GB · VRAM 5.2 GB`.
 pub fn telemetry_compact(ui: &mut Ui, t: &TelemetrySnapshot) {
     let dot = if t.llm_ram.is_some() { POSITIVE } else { MUTED };
-    ui.label(RichText::new("●").size(10.0).color(dot));
+    // Painted, not a glyph: "●" is missing from egui's bundled fonts.
+    let (rect, _) = ui.allocate_exact_size(Vec2::splat(10.0), Sense::hover());
+    ui.painter().circle_filled(rect.center(), 4.0, dot);
     ui.label(RichText::new("LLM").size(12.0).color(MUTED).strong());
     match t.llm_ram {
         Some(ram) => {

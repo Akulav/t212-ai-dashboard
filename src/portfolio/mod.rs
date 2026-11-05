@@ -11,6 +11,7 @@
 //! Sync always uses a **read-only** client: it never needs write access.
 
 pub mod analytics;
+pub mod demo;
 pub mod store;
 
 use std::sync::Arc;
@@ -81,6 +82,8 @@ pub struct PortfolioState {
     pub has_credentials: bool,
     /// Active environment.
     pub environment: T212Environment,
+    /// `true` when showing built-in sample data (`AURA_DEMO=1`).
+    pub demo: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -98,6 +101,7 @@ struct Inner {
     running: AtomicBool,
     last_quick: Mutex<Option<Instant>>,
     last_full: Mutex<Option<Instant>>,
+    demo: bool,
 }
 
 /// Cheaply clonable handle to the sync service.
@@ -119,6 +123,7 @@ impl PortfolioService {
                 running: AtomicBool::new(false),
                 last_quick: Mutex::new(None),
                 last_full: Mutex::new(None),
+                demo: demo::enabled(),
             }),
         };
         service.set_environment(env);
@@ -132,7 +137,11 @@ impl PortfolioService {
 
     /// Switches environment: loads that environment's cache and resets timers.
     pub fn set_environment(&self, env: T212Environment) {
-        let cache = PortfolioCache::load(&store::cache_path(&self.inner.paths, env));
+        let cache = if self.inner.demo {
+            demo::cache(Utc::now())
+        } else {
+            PortfolioCache::load(&store::cache_path(&self.inner.paths, env))
+        };
         let view = build_view(&cache);
         *self.inner.cache.lock() = cache;
         {
@@ -140,7 +149,8 @@ impl PortfolioService {
             st.environment = env;
             st.view = view;
             st.status = SyncStatus::Idle;
-            st.has_credentials = secrets::has_credentials(env);
+            st.demo = self.inner.demo;
+            st.has_credentials = self.inner.demo || secrets::has_credentials(env);
         }
         *self.inner.last_quick.lock() = None;
         *self.inner.last_full.lock() = None;
@@ -148,6 +158,9 @@ impl PortfolioService {
 
     /// Call after credentials are saved or removed.
     pub fn credentials_changed(&self) {
+        if self.inner.demo {
+            return;
+        }
         let env = self.inner.state.lock().environment;
         let has = secrets::has_credentials(env);
         self.inner.state.lock().has_credentials = has;
@@ -160,6 +173,9 @@ impl PortfolioService {
 
     /// Deletes the local cache for the active environment.
     pub fn clear_cache(&self) {
+        if self.inner.demo {
+            return;
+        }
         let env = self.inner.state.lock().environment;
         let _ = std::fs::remove_file(store::cache_path(&self.inner.paths, env));
         self.set_environment(env);
@@ -167,7 +183,10 @@ impl PortfolioService {
 
     /// Schedules syncs when due. Cheap; call every frame.
     pub fn tick(&self) {
-        if !self.inner.state.lock().has_credentials || self.inner.running.load(Ordering::SeqCst) {
+        if self.inner.demo
+            || !self.inner.state.lock().has_credentials
+            || self.inner.running.load(Ordering::SeqCst)
+        {
             return;
         }
         let due = |slot: &Mutex<Option<Instant>>, every: Duration| {
@@ -182,7 +201,7 @@ impl PortfolioService {
 
     /// Forces a full sync now (the Refresh button).
     pub fn refresh_now(&self) {
-        if !self.inner.running.load(Ordering::SeqCst) {
+        if !self.inner.demo && !self.inner.running.load(Ordering::SeqCst) {
             self.start(SyncKind::Full);
         }
     }

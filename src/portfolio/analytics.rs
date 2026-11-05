@@ -18,7 +18,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc, Weekday};
 
 use crate::t212::models::{AccountSummary, Dividend, Position, Transaction};
 
@@ -339,6 +339,10 @@ pub fn compute(
         let mut next = last + step;
         while next < today {
             next += step;
+        }
+        // Payments settle on business days: roll weekend projections to Monday.
+        while matches!(next.weekday(), Weekday::Sat | Weekday::Sun) {
+            next += Duration::days(1);
         }
         if next > horizon {
             continue;

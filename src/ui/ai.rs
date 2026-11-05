@@ -225,6 +225,7 @@ fn catalog(ui: &mut Ui, st: &LlmState, svc: &Services, settings: &mut Settings) 
             .color(ACCENT),
         );
         ui.add_space(6.0);
+        widgets::table_mode(ui);
         egui::Grid::new("model_catalog")
             .num_columns(5)
             .spacing([18.0, 10.0])

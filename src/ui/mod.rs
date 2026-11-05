@@ -55,6 +55,23 @@ impl Page {
         Page::Settings,
     ];
 
+    /// Start page from `AURA_PAGE` (`dashboard`, `holdings`, `dividends`,
+    /// `insights`, `ai`, `settings`); used by `scripts/screenshots.ps1`.
+    fn from_env() -> Self {
+        match std::env::var("AURA_PAGE")
+            .unwrap_or_default()
+            .to_lowercase()
+            .as_str()
+        {
+            "holdings" => Page::Holdings,
+            "dividends" => Page::Dividends,
+            "insights" => Page::Insights,
+            "ai" | "ai-engine" => Page::AiEngine,
+            "settings" => Page::Settings,
+            _ => Page::Dashboard,
+        }
+    }
+
     fn label(self) -> &'static str {
         match self {
             Page::Dashboard => "📊  Dashboard",
@@ -103,6 +120,10 @@ pub fn portfolio_header(
     ui.horizontal(|ui| {
         ui.heading(RichText::new(title).strong());
         ui.add_space(8.0);
+        if state.demo {
+            widgets::chip(ui, "DEMO DATA · sample portfolio", GOLD);
+            return;
+        }
         if !state.has_credentials {
             widgets::chip(ui, "Not connected · add your API key in Settings", WARNING);
             return;
@@ -174,7 +195,7 @@ impl AuraApp {
             settings,
             telemetry,
             update: Arc::new(Mutex::new(UpdateState::Idle)),
-            page: Page::Dashboard,
+            page: Page::from_env(),
             logo,
             settings_page,
         };

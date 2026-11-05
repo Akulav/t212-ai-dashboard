@@ -41,13 +41,16 @@ and a zero-config local LLM analyst powered by `llama.cpp`.
 
 <div align="center">
 
-| Dashboard | AI Engine |
-|:---:|:---:|
-| <img src="docs/screenshots/dashboard.png" alt="Dashboard" width="420"/> | <img src="docs/screenshots/ai-engine.png" alt="AI engine" width="420"/> |
-| **Holdings** | **AI Report (PDF)** |
-| <img src="docs/screenshots/holdings.png" alt="Holdings" width="420"/> | <img src="docs/screenshots/report.png" alt="PDF report" width="420"/> |
+<img src="docs/screenshots/dashboard.png" alt="Aura dashboard: portfolio value, total return, dividends, tax withheld, market bell and value history" width="100%"/>
 
-<sub>Screenshot placeholders — drop PNGs into <code>docs/screenshots/</code>.</sub>
+| Holdings | Dividends |
+|:---:|:---:|
+| <img src="docs/screenshots/holdings.png" alt="Holdings table with P/L, FX, yield on cost and weights" width="420"/> | <img src="docs/screenshots/dividends.png" alt="Monthly dividend income, projected calendar and top payers" width="420"/> |
+| **Local AI engine** | |
+| <img src="docs/screenshots/ai-engine.png" alt="Hardware detection, llama.cpp runtime, telemetry and model library" width="420"/> | |
+
+<sub>Captured from the real app in demo mode (<code>AURA_DEMO=1</code>), which uses a sample portfolio, not real account data.
+Regenerate with <code>scripts/screenshots.ps1</code>.</sub>
 
 </div>
 
@@ -135,6 +138,10 @@ Extract it anywhere you like (e.g. `~/Apps/Aura`) and run `aura-portfolio`.
 3. Click **Load**. When you're done, **Unload** frees all RAM/VRAM instantly.
 
 That's it: no Python, no Docker, no Ollama.
+
+> [!TIP]
+> **Just looking?** Run with `AURA_DEMO=1` to explore every page with a built-in sample portfolio.
+> No API key needed, and nothing is sent anywhere.
 
 > [!TIP]
 > **Portable by design.** If Aura's folder is writable, everything (runtime, models, logs, settings)
