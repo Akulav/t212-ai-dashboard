@@ -51,6 +51,9 @@ pub struct PortfolioCache {
     pub account_id: Option<i64>,
     /// Last account summary.
     pub summary: Option<AccountSummary>,
+    /// `true` if [`Self::summary`] was rebuilt from positions because the
+    /// API key may not read the account summary (no cash / realised P/L).
+    pub summary_partial: bool,
     /// Last positions.
     pub positions: Vec<Position>,
     /// All known dividends, newest first.

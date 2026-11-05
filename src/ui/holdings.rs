@@ -1,6 +1,7 @@
 //! Holdings page: sortable, searchable positions table.
 
 use eframe::egui::{self, RichText, Ui};
+use egui_phosphor::regular as ph;
 
 use super::dashboard::{short_ticker, truncate, weight_bar};
 use super::theme::palette::*;
@@ -44,12 +45,18 @@ impl Default for HoldingsPage {
 impl HoldingsPage {
     /// Renders the page.
     pub fn show(&mut self, ui: &mut Ui, portfolio: &PortfolioService, state: &PortfolioState) {
-        portfolio_header(ui, "Holdings", portfolio, state);
+        portfolio_header(
+            ui,
+            "Holdings",
+            "Positions, cost basis, P/L and income per holding",
+            portfolio,
+            state,
+        );
         ui.add_space(12.0);
         let Some(view) = state.view.as_deref() else {
             widgets::empty_state(
                 ui,
-                "💼",
+                ph::BRIEFCASE,
                 "No data yet",
                 "Connect Trading212 in Settings to see your positions.",
             );
@@ -62,7 +69,7 @@ impl HoldingsPage {
         ui.columns(4, |c| {
             widgets::kpi(
                 &mut c[0],
-                "📦",
+                ph::STACK,
                 "Invested value",
                 &format::money(inv.current_value, ccy),
                 &format!("{} positions", a.holdings.len()),
@@ -70,7 +77,7 @@ impl HoldingsPage {
             );
             widgets::kpi(
                 &mut c[1],
-                "🏷",
+                ph::TAG,
                 "Cost basis",
                 &format::money(inv.total_cost, ccy),
                 "open positions",
@@ -79,7 +86,7 @@ impl HoldingsPage {
             let upct = (inv.total_cost > 0.0).then(|| inv.unrealized_profit_loss / inv.total_cost);
             widgets::kpi(
                 &mut c[2],
-                "📈",
+                ph::TREND_UP,
                 "Unrealised P/L",
                 &format::signed_money(inv.unrealized_profit_loss, ccy),
                 &upct.map_or_else(String::new, format::signed_pct),
@@ -87,7 +94,7 @@ impl HoldingsPage {
             );
             widgets::kpi(
                 &mut c[3],
-                "✅",
+                ph::CHECK_CIRCLE,
                 "Realised P/L",
                 &format::signed_money(inv.realized_profit_loss, ccy),
                 "lifetime, closed trades",
@@ -101,7 +108,10 @@ impl HoldingsPage {
                 widgets::section_title(ui, "Positions");
                 ui.add(
                     egui::TextEdit::singleline(&mut self.search)
-                        .hint_text("🔍 Search ticker, name or ISIN")
+                        .hint_text(format!(
+                            "{}  Search ticker, name or ISIN",
+                            ph::MAGNIFYING_GLASS
+                        ))
                         .desired_width(260.0),
                 );
             });
@@ -227,7 +237,11 @@ impl HoldingsPage {
             return;
         };
         let arrow = if self.sort == sort {
-            if self.descending { " ⏷" } else { " ⏶" }
+            if self.descending {
+                ph::CARET_DOWN
+            } else {
+                ph::CARET_UP
+            }
         } else {
             ""
         };

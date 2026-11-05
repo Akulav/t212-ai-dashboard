@@ -78,19 +78,33 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # `label` names installer files; it must NOT contain the target
+        # triple, so the in-app updater keeps choosing the portable archive.
         include:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             archive: zip
+            formats: nsis
+            label: windows-x64
           - os: ubuntu-22.04 # older glibc = wider Linux compatibility
             target: x86_64-unknown-linux-gnu
             archive: tar.gz
+            formats: deb,appimage
+            label: linux-x64
           - os: macos-14
             target: aarch64-apple-darwin
             archive: tar.gz
+            formats: app,dmg
+            label: macos-apple-silicon
           - os: macos-14
             target: x86_64-apple-darwin
             archive: tar.gz
+            formats: app,dmg
+            label: macos-intel
+    env:
+      CARGO_PACKAGER_VERSION: 0.11.8
+      # linuxdeploy (AppImage) without FUSE on CI runners.
+      APPIMAGE_EXTRACT_AND_RUN: 1
     steps:
       - uses: actions/checkout@v4
         with:
@@ -123,6 +137,8 @@ jobs:
           mkdir -p dist
           cp "target/${{ matrix.target }}/release/${BIN_NAME}" dist/
           cp README.md LICENSE dist/
+          # Marker: keep all data in ./aura-data next to the binary.
+          echo "Delete this file to store data in your user profile instead." > dist/portable
           (cd dist && tar -czf "../${NAME}.tar.gz" *)
           shasum -a 256 "${NAME}.tar.gz" > "${NAME}.tar.gz.sha256"
 
@@ -134,9 +150,39 @@ jobs:
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/$env:BIN_NAME.exe" dist/
           Copy-Item README.md, LICENSE dist/
+          # Marker: keep all data in .\aura-data next to the exe.
+          "Delete this file to store data in your user profile instead." | Out-File -Encoding ascii dist/portable
           Compress-Archive -Path dist/* -DestinationPath "$name.zip"
           $hash = (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLower()
           "$hash  $name.zip" | Out-File -Encoding ascii "$name.zip.sha256"
+
+      - name: Install cargo-packager
+        shell: bash
+        run: |
+          if ! cargo packager --version 2>/dev/null | grep -q "$CARGO_PACKAGER_VERSION"; then
+            cargo install cargo-packager --locked --version "$CARGO_PACKAGER_VERSION"
+          fi
+
+      - name: Build installers (${{ matrix.formats }})
+        run: cargo packager --release --target ${{ matrix.target }} --formats ${{ matrix.formats }}
+
+      - name: Collect installers
+        shell: bash
+        run: |
+          TAG="${{ needs.version.outputs.tag }}"
+          PREFIX="${BIN_NAME}-${TAG}-${{ matrix.label }}"
+          shopt -s nullglob
+          for f in target/packages/*-setup.exe target/packages/*.dmg target/packages/*.deb target/packages/*.AppImage; do
+            case "$f" in
+              *-setup.exe) out="${PREFIX}-setup.exe" ;;
+              *.dmg)       out="${PREFIX}.dmg" ;;
+              *.deb)       out="${PREFIX}.deb" ;;
+              *.AppImage)  out="${PREFIX}.AppImage" ;;
+            esac
+            cp "$f" "$out"
+            if command -v sha256sum >/dev/null; then sha256sum "$out" > "$out.sha256"; else shasum -a 256 "$out" > "$out.sha256"; fi
+            echo "installer: $out"
+          done
 
       - uses: actions/upload-artifact@v4
         with:
@@ -145,6 +191,10 @@ jobs:
           path: |
             *.zip
             *.tar.gz
+            *.exe
+            *.dmg
+            *.deb
+            *.AppImage
             *.sha256
 
   publish:
@@ -163,4 +213,16 @@ jobs:
           target_commitish: ${{ env.RELEASE_SHA }}
           name: Aura Portfolio ${{ needs.version.outputs.tag }}
           generate_release_notes: true
+          body: |
+            ## Download
+
+            | Platform | Installer (recommended) | Portable |
+            |---|---|---|
+            | Windows 10/11 | `aura-portfolio-${{ needs.version.outputs.tag }}-windows-x64-setup.exe` | `…-x86_64-pc-windows-msvc.zip` |
+            | macOS Apple Silicon | `aura-portfolio-${{ needs.version.outputs.tag }}-macos-apple-silicon.dmg` | `…-aarch64-apple-darwin.tar.gz` |
+            | macOS Intel | `aura-portfolio-${{ needs.version.outputs.tag }}-macos-intel.dmg` | `…-x86_64-apple-darwin.tar.gz` |
+            | Linux | `.deb` (Debian/Ubuntu) or `.AppImage` | `…-x86_64-unknown-linux-gnu.tar.gz` |
+
+            Builds are not code-signed yet. Windows SmartScreen may show "More info → Run anyway". On macOS, right-click the app → Open the first time.
+            Every file has a matching `.sha256` checksum.
           files: dist/*

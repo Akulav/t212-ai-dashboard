@@ -347,6 +347,7 @@ pub fn cache(now: DateTime<Utc>) -> PortfolioCache {
         version: 1,
         account_id: Some(1),
         summary: Some(summary),
+        summary_partial: false,
         positions,
         dividends,
         transactions,

@@ -196,6 +196,20 @@ pub fn compute(
     transactions: &[Transaction],
     now: DateTime<Utc>,
 ) -> Analytics {
+    compute_with(summary, positions, dividends, transactions, now, true)
+}
+
+/// Like [`compute`], but `summary_complete = false` marks a summary rebuilt
+/// from positions (no cash): total return then uses open-position P/L
+/// instead of comparing a cash-less value against net deposits.
+pub fn compute_with(
+    summary: &AccountSummary,
+    positions: &[Position],
+    dividends: &[Dividend],
+    transactions: &[Transaction],
+    now: DateTime<Utc>,
+    summary_complete: bool,
+) -> Analytics {
     let currency = summary.currency.clone();
     let by_ticker_pos: HashMap<&str, &Position> = positions
         .iter()
@@ -387,7 +401,7 @@ pub fn compute(
         .collect();
 
     let (total_return, total_return_pct, from_deposits) = match net_deposits.last() {
-        Some(&(_, deposited)) if deposited > 0.0 => {
+        Some(&(_, deposited)) if deposited > 0.0 && summary_complete => {
             let r = summary.total_value - deposited;
             (r, Some(r / deposited), true)
         }
@@ -575,6 +589,24 @@ mod tests {
         assert!(a.total_return_from_deposits);
         assert!((a.total_return - 130.0).abs() < 1e-9);
         assert_eq!(a.net_deposits.last().unwrap().1, 1300.0);
+    }
+
+    #[test]
+    fn partial_summary_never_compares_against_deposits() {
+        let tx = Transaction {
+            reference: "d".into(),
+            amount: 10_000.0,
+            currency: "GBP".into(),
+            date_time: Some(Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap()),
+            kind: "DEPOSIT".into(),
+        };
+        // Positions-only value (no cash) would look like a big loss vs. deposits.
+        let mut s = summary(8_000.0);
+        s.investments.total_cost = 7_000.0;
+        s.investments.unrealized_profit_loss = 1_000.0;
+        let a = compute_with(&s, &[], &[], &[tx], now(), false);
+        assert!(!a.total_return_from_deposits);
+        assert_eq!(a.total_return, 1_000.0);
     }
 
     #[test]

@@ -2,6 +2,7 @@
 //! payers and payment history.
 
 use eframe::egui::{self, Align, Layout, RichText, Ui};
+use egui_phosphor::regular as ph;
 
 use super::dashboard::{short_ticker, truncate};
 use super::theme::palette::*;
@@ -11,12 +12,18 @@ use crate::portfolio::{PortfolioService, PortfolioState};
 
 /// Renders the page.
 pub fn show(ui: &mut Ui, portfolio: &PortfolioService, state: &PortfolioState) {
-    portfolio_header(ui, "Dividends", portfolio, state);
+    portfolio_header(
+        ui,
+        "Dividends",
+        "Income received, tax withheld and projected payments",
+        portfolio,
+        state,
+    );
     ui.add_space(12.0);
     let Some(view) = state.view.as_deref() else {
         widgets::empty_state(
             ui,
-            "💰",
+            ph::COINS,
             "No data yet",
             "Connect Trading212 in Settings to see your dividend income.",
         );
@@ -37,7 +44,7 @@ pub fn show(ui: &mut Ui, portfolio: &PortfolioService, state: &PortfolioState) {
     ui.columns(4, |c| {
         kpi(
             &mut c[0],
-            "💰",
+            ph::COINS,
             "Total received",
             &format::money(d.total, ccy),
             &format!("{} payments", d.payments),
@@ -45,7 +52,7 @@ pub fn show(ui: &mut Ui, portfolio: &PortfolioService, state: &PortfolioState) {
         );
         kpi(
             &mut c[1],
-            "📅",
+            ph::CALENDAR_BLANK,
             "Last 12 months",
             &format::money(d.last_12m, ccy),
             &format!("YTD {}", format::money(d.ytd, ccy)),
@@ -66,10 +73,17 @@ pub fn show(ui: &mut Ui, portfolio: &PortfolioService, state: &PortfolioState) {
             ),
             None => ("—".into(), "not enough data".into()),
         };
-        kpi(&mut c[2], "%", "Avg. tax withheld", &rate, &caption, VIOLET);
+        kpi(
+            &mut c[2],
+            ph::PERCENT,
+            "Avg. tax withheld",
+            &rate,
+            &caption,
+            VIOLET,
+        );
         kpi(
             &mut c[3],
-            "🔮",
+            ph::CALENDAR_CHECK,
             "Next 90 days",
             &format!("≈{}", format::money(projected_90, ccy)),
             "projected from history",

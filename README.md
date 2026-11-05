@@ -114,21 +114,33 @@ Regenerate with <code>scripts/screenshots.ps1</code>.</sub>
 
 ## 🚀 Quick start
 
-### 1. Download
-Grab the archive for your platform from the [**latest release**](https://github.com/akulav/t212-ai-dashboard/releases/latest):
+### 1. Install
+Download the installer for your platform from the [**latest release**](https://github.com/Akulav/t212-ai-dashboard/releases/latest):
 
-| Platform | File |
-|---|---|
-| Windows 10/11 x64 | `aura-portfolio-vX.Y.Z-x86_64-pc-windows-msvc.zip` |
-| macOS Apple Silicon | `aura-portfolio-vX.Y.Z-aarch64-apple-darwin.tar.gz` |
-| macOS Intel | `aura-portfolio-vX.Y.Z-x86_64-apple-darwin.tar.gz` |
-| Linux x64 | `aura-portfolio-vX.Y.Z-x86_64-unknown-linux-gnu.tar.gz` |
+| Platform | Installer (recommended) | Portable alternative |
+|---|---|---|
+| Windows 10/11 | `aura-portfolio-vX.Y.Z-windows-x64-setup.exe` | `…-x86_64-pc-windows-msvc.zip` |
+| macOS Apple Silicon | `aura-portfolio-vX.Y.Z-macos-apple-silicon.dmg` | `…-aarch64-apple-darwin.tar.gz` |
+| macOS Intel | `aura-portfolio-vX.Y.Z-macos-intel.dmg` | `…-x86_64-apple-darwin.tar.gz` |
+| Linux | `…-linux-x64.deb` or `…-linux-x64.AppImage` | `…-x86_64-unknown-linux-gnu.tar.gz` |
 
-Extract it anywhere you like (e.g. `~/Apps/Aura`) and run `aura-portfolio`.
+- **Windows:** run the setup. It installs for your user only (no admin prompt), adds Start Menu and Desktop shortcuts, and registers an uninstaller in *Apps & features*.
+- **macOS:** open the `.dmg` and drag *Aura Portfolio* to Applications.
+- **Linux:** `sudo apt install ./aura-portfolio-…-linux-x64.deb`, or `chmod +x` the AppImage and run it.
+
+> [!NOTE]
+> Builds aren't code-signed yet. On Windows, SmartScreen may ask you to click *More info → Run anyway*. On macOS, right-click the app and choose *Open* the first time.
 
 ### 2. Connect Trading212
-**Settings → Trading212 connection** → paste the API key (and secret) from
-*Trading212 → Settings → API*. It goes straight into your OS keychain.
+In *Trading212 → Settings → API*, create a key with these permissions:
+
+| Permission | Unlocks |
+|---|---|
+| **Account data** | cash, total value, realised P/L, total return vs. deposits |
+| **Portfolio** | positions (required) |
+| **History** (dividends, transactions) | dividends, tax withheld, deposits, projections |
+
+Paste the key and secret into **Settings → Trading212 connection**. They go straight into your OS keychain. If a permission is missing, Aura still syncs everything else and tells you exactly what to enable.
 
 ### 3. Turn on the AI (zero config)
 **AI Engine** tab:
@@ -144,9 +156,10 @@ That's it: no Python, no Docker, no Ollama.
 > No API key needed, and nothing is sent anywhere.
 
 > [!TIP]
-> **Portable by design.** If Aura's folder is writable, everything (runtime, models, logs, settings)
-> lives in `aura-data/` next to the executable. Delete the folder to uninstall completely.
-> Otherwise it uses your OS data directory. Override with `AURA_DATA_DIR`.
+> **Where's my data?** Installed builds keep runtime, models, logs and settings in your user
+> profile (e.g. `%LOCALAPPDATA%\akulav\AuraPortfolio`), so updates and uninstalls never touch it.
+> The portable archives ship a `portable` marker file, which keeps everything in `aura-data/`
+> next to the executable; delete that folder to remove all traces. Override either with `AURA_DATA_DIR`.
 
 ### Build from source
 

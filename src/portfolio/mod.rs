@@ -82,6 +82,8 @@ pub struct PortfolioState {
     pub has_credentials: bool,
     /// Active environment.
     pub environment: T212Environment,
+    /// Non-fatal problems from the last sync (e.g. missing key permissions).
+    pub warnings: Vec<String>,
     /// `true` when showing built-in sample data (`AURA_DEMO=1`).
     pub demo: bool,
 }
@@ -250,27 +252,43 @@ impl PortfolioService {
         // Sync never needs write access.
         let client = T212Client::new(self.inner.http.clone(), env, creds, TradingMode::ReadOnly);
 
-        self.set_status("Account summary");
-        let summary = client.account_summary().await.map_err(map_err)?;
+        // Each endpoint needs its own API-key permission. Only positions are
+        // essential; anything else that is forbidden degrades gracefully.
+        let mut warnings = Vec::new();
+
         self.set_status("Positions");
         let positions = client.positions().await.map_err(map_err)?;
+
+        self.set_status("Account summary");
+        let (summary, partial) = match client.account_summary().await {
+            Ok(s) => (s, false),
+            Err(T212Error::Unauthorized(_)) => {
+                warnings.push(WARN_ACCOUNT_SCOPE.to_string());
+                (summary_from_positions(&positions), true)
+            }
+            Err(e) => return Err(map_err(e)),
+        };
 
         let now = Utc::now();
         {
             let mut cache = self.inner.cache.lock();
-            if cache.account_id.is_some_and(|id| id != summary.id) {
-                tracing::info!("different account detected; resetting cache");
-                *cache = PortfolioCache {
-                    version: cache.version,
-                    ..Default::default()
-                };
+            if !partial {
+                if cache.account_id.is_some_and(|id| id != summary.id) {
+                    tracing::info!("different account detected; resetting cache");
+                    *cache = PortfolioCache {
+                        version: cache.version,
+                        ..Default::default()
+                    };
+                }
+                cache.account_id = Some(summary.id);
             }
-            cache.account_id = Some(summary.id);
             cache.record_snapshot(&summary, now);
             cache.summary = Some(summary);
+            cache.summary_partial = partial;
             cache.positions = positions;
             cache.synced_at = Some(now);
         }
+        self.inner.state.lock().warnings = warnings.clone();
         self.publish(env);
 
         if kind == SyncKind::Full {
@@ -295,13 +313,25 @@ impl PortfolioService {
             });
             let dividends = client
                 .dividends(max_pages, |d| div_refs.contains(&store::dividend_key(d)))
-                .await
-                .map_err(map_err)?;
+                .await;
             self.set_status("Deposits & withdrawals");
             let transactions = client
                 .transactions(max_pages, |t| tx_refs.contains(&store::transaction_key(t)))
-                .await
-                .map_err(map_err)?;
+                .await;
+
+            let mut history_ok = true;
+            let dividends = optional(
+                dividends,
+                "dividend history",
+                &mut warnings,
+                &mut history_ok,
+            );
+            let transactions = optional(
+                transactions,
+                "deposit/withdrawal history",
+                &mut warnings,
+                &mut history_ok,
+            );
             tracing::info!(
                 new_dividends = dividends.len(),
                 new_transactions = transactions.len(),
@@ -311,7 +341,11 @@ impl PortfolioService {
             let mut cache = self.inner.cache.lock();
             cache.merge_dividends(dividends);
             cache.merge_transactions(transactions);
-            cache.history_synced_at = Some(Utc::now());
+            if history_ok {
+                cache.history_synced_at = Some(Utc::now());
+            }
+            drop(cache);
+            self.inner.state.lock().warnings = warnings;
         }
 
         let cache = self.inner.cache.lock().clone();
@@ -330,18 +364,74 @@ impl PortfolioService {
     }
 }
 
+/// Shown when the API key lacks the "Account data" permission (HTTP 403 on
+/// `/equity/account/summary`).
+pub const WARN_ACCOUNT_SCOPE: &str = "Your API key lacks the \"Account data\" permission, so cash, total value and realised P/L \
+     are unavailable (totals below are from open positions only). Enable it in Trading212 → Settings → API, \
+     then save the new key in Aura's Settings.";
+
 fn map_err(e: T212Error) -> anyhow::Error {
     anyhow::Error::new(e)
 }
 
+/// Unwraps a non-essential history fetch, turning failures into warnings.
+fn optional<T>(
+    result: Result<Vec<T>, T212Error>,
+    what: &str,
+    warnings: &mut Vec<String>,
+    ok: &mut bool,
+) -> Vec<T> {
+    match result {
+        Ok(items) => items,
+        Err(e) => {
+            *ok = false;
+            warnings.push(match e {
+                T212Error::Unauthorized(_) => format!(
+                    "Your API key lacks the permission for {what}; that section stays empty. Enable \"History\" permissions in Trading212 → Settings → API."
+                ),
+                other => format!("Could not load {what}: {other}"),
+            });
+            Vec::new()
+        }
+    }
+}
+
+/// Best-effort account summary rebuilt from positions when the summary
+/// endpoint is not permitted. Cash and realised P/L are unknown (zero).
+fn summary_from_positions(positions: &[Position]) -> AccountSummary {
+    let currency = positions
+        .iter()
+        .map(|p| p.wallet_impact.currency.clone())
+        .find(|c| !c.is_empty())
+        .unwrap_or_default();
+    let value: f64 = positions
+        .iter()
+        .map(|p| p.wallet_impact.current_value)
+        .sum();
+    let cost: f64 = positions.iter().map(|p| p.wallet_impact.total_cost).sum();
+    AccountSummary {
+        id: 0,
+        currency,
+        total_value: value,
+        cash: Default::default(),
+        investments: crate::t212::models::Investments {
+            current_value: value,
+            total_cost: cost,
+            realized_profit_loss: 0.0,
+            unrealized_profit_loss: value - cost,
+        },
+    }
+}
+
 fn build_view(cache: &PortfolioCache) -> Option<Arc<PortfolioView>> {
     let summary = cache.summary.clone()?;
-    let analytics = analytics::compute(
+    let analytics = analytics::compute_with(
         &summary,
         &cache.positions,
         &cache.dividends,
         &cache.transactions,
         Utc::now(),
+        !cache.summary_partial,
     );
     Some(Arc::new(PortfolioView {
         summary,

@@ -26,10 +26,11 @@ use crate::paths::AppPaths;
 use crate::portfolio::{PortfolioService, PortfolioState, SyncStatus};
 use crate::telemetry::Telemetry;
 use crate::updater::{self, UpdateState};
+use egui_phosphor::regular as ph;
 use theme::palette::*;
 
 /// Top-level pages.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Page {
     /// Portfolio overview and market context.
     Dashboard,
@@ -72,14 +73,25 @@ impl Page {
         }
     }
 
-    fn label(self) -> &'static str {
+    /// `(icon, label)` for the navigation rail.
+    fn nav(self) -> (&'static str, &'static str) {
         match self {
-            Page::Dashboard => "📊  Dashboard",
-            Page::Holdings => "💼  Holdings",
-            Page::Dividends => "💰  Dividends",
-            Page::Insights => "💡  AI Insights",
-            Page::AiEngine => "🖥  AI Engine",
-            Page::Settings => "⚙  Settings",
+            Page::Dashboard => (ph::SQUARES_FOUR, "Overview"),
+            Page::Holdings => (ph::BRIEFCASE, "Holdings"),
+            Page::Dividends => (ph::COINS, "Dividends"),
+            Page::Insights => (ph::SPARKLE, "AI Insights"),
+            Page::AiEngine => (ph::CPU, "AI Engine"),
+            Page::Settings => (ph::GEAR_SIX, "Settings"),
+        }
+    }
+
+    /// Navigation group heading shown above this page, if it starts a group.
+    fn group(self) -> Option<&'static str> {
+        match self {
+            Page::Dashboard => Some("Portfolio"),
+            Page::Insights => Some("Intelligence"),
+            Page::Settings => Some("App"),
+            _ => None,
         }
     }
 }
@@ -105,61 +117,98 @@ pub struct AuraApp {
     telemetry: Telemetry,
     update: Arc<Mutex<UpdateState>>,
     page: Page,
+    /// Page rendered last frame (scroll reset on change).
+    shown_page: Option<Page>,
     logo: egui::TextureHandle,
     settings_page: settings::SettingsPage,
     holdings_page: holdings::HoldingsPage,
 }
 
-/// Page title row with sync status, last-sync time and a Refresh button.
+/// Page header: title + subtitle on the left, connection chip, sync status
+/// and Refresh on the right, then any sync error/warnings as banners.
 pub fn portfolio_header(
     ui: &mut egui::Ui,
     title: &str,
+    subtitle: &str,
     portfolio: &PortfolioService,
     state: &PortfolioState,
 ) {
     ui.horizontal(|ui| {
-        ui.heading(RichText::new(title).strong());
-        ui.add_space(8.0);
-        if state.demo {
-            widgets::chip(ui, "DEMO DATA · sample portfolio", GOLD);
-            return;
-        }
-        if !state.has_credentials {
-            widgets::chip(ui, "Not connected · add your API key in Settings", WARNING);
-            return;
-        }
-        widgets::chip(ui, &format!("T212 · {}", state.environment.label()), ACCENT);
+        ui.vertical(|ui| widgets::page_title(ui, title, subtitle));
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if state.demo {
+                widgets::chip(
+                    ui,
+                    &format!("{}  DEMO DATA · sample portfolio", ph::FLASK),
+                    GOLD,
+                );
+                return;
+            }
+            if !state.has_credentials {
+                widgets::chip(ui, &format!("{}  Not connected", ph::PLUGS), WARNING);
+                return;
+            }
             let syncing = portfolio.is_syncing();
             if ui
-                .add_enabled(!syncing, egui::Button::new("⟳ Refresh"))
+                .add_enabled(
+                    !syncing,
+                    egui::Button::new(format!("{}  Refresh", ph::ARROWS_CLOCKWISE)),
+                )
                 .clicked()
             {
                 portfolio.refresh_now();
             }
             match &state.status {
                 SyncStatus::Syncing(step) => {
-                    ui.label(RichText::new(step).size(12.0).color(MUTED));
+                    ui.label(RichText::new(step).size(12.5).color(MUTED));
                     ui.spinner();
                 }
-                SyncStatus::Failed(e) => {
-                    ui.label(RichText::new("⚠ sync failed").size(12.0).color(NEGATIVE))
-                        .on_hover_text(e);
+                SyncStatus::Failed(_) => {
+                    ui.label(RichText::new("sync failed").size(12.5).color(NEGATIVE));
                 }
                 SyncStatus::Idle => {
-                    if let Some(v) = &state.view
-                        && let Some(t) = v.synced_at
-                    {
+                    if let Some(t) = state.view.as_ref().and_then(|v| v.synced_at) {
                         ui.label(
                             RichText::new(format!("updated {}", format::ago(t)))
-                                .size(12.0)
+                                .size(12.5)
                                 .color(MUTED),
                         );
                     }
                 }
             }
+            widgets::chip(
+                ui,
+                &format!(
+                    "{}  Trading212 · {}",
+                    ph::PLUGS_CONNECTED,
+                    state.environment.label()
+                ),
+                ACCENT,
+            );
         });
     });
+    if !state.has_credentials && !state.demo {
+        ui.add_space(10.0);
+        widgets::banner(
+            ui,
+            ph::KEY,
+            "Connect your Trading212 account: open Settings and paste your API key and secret. They are stored in your OS keychain.",
+            ACCENT,
+        );
+    }
+    if let SyncStatus::Failed(e) = &state.status {
+        ui.add_space(10.0);
+        widgets::banner(
+            ui,
+            ph::WARNING_OCTAGON,
+            &format!("Sync failed: {e}"),
+            NEGATIVE,
+        );
+    }
+    for w in &state.warnings {
+        ui.add_space(10.0);
+        widgets::banner(ui, ph::WARNING, w, WARNING);
+    }
 }
 
 impl AuraApp {
@@ -196,6 +245,7 @@ impl AuraApp {
             telemetry,
             update: Arc::new(Mutex::new(UpdateState::Idle)),
             page: Page::from_env(),
+            shown_page: None,
             logo,
             settings_page,
         };
@@ -257,51 +307,18 @@ impl AuraApp {
         }
     }
 
-    fn top_bar(&mut self, ctx: &egui::Context) {
-        egui::TopBottomPanel::top("top_bar")
-            .exact_height(60.0)
-            .frame(
-                egui::Frame::new()
-                    .fill(SURFACE)
-                    .stroke(Stroke::new(1.0_f32, BORDER))
-                    .inner_margin(Margin::symmetric(18, 10)),
-            )
-            .show(ctx, |ui| {
-                ui.horizontal_centered(|ui| {
-                    ui.add(egui::Image::new((self.logo.id(), egui::vec2(34.0, 34.0))));
-                    ui.vertical(|ui| {
-                        ui.spacing_mut().item_spacing.y = 0.0;
-                        ui.label(RichText::new("AURA").size(17.0).strong().color(TEXT));
-                        ui.label(
-                            RichText::new("PORTFOLIO INTELLIGENCE")
-                                .size(9.5)
-                                .color(MUTED),
-                        );
-                    });
-
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        self.update_button(ui);
-                        ui.add_space(8.0);
-                        let mode = match self.settings.trading_mode {
-                            TradingMode::ReadOnly => ("🔒 READ-ONLY", ACCENT),
-                            TradingMode::ReadWrite => ("⚠ TRADING ENABLED", WARNING),
-                        };
-                        widgets::chip(ui, mode.0, mode.1);
-                        ui.add_space(8.0);
-                        market_bell(ui);
-                    });
-                });
-            });
-    }
-
     fn update_button(&mut self, ui: &mut egui::Ui) {
         let state = self.update.lock().clone();
         match state {
             UpdateState::Available(info) => {
                 let btn = egui::Button::new(
-                    RichText::new(format!("⬆  Update to v{}", info.version))
-                        .strong()
-                        .color(BG),
+                    RichText::new(format!(
+                        "{}  Update to v{}",
+                        ph::ARROW_CIRCLE_UP,
+                        info.version
+                    ))
+                    .strong()
+                    .color(BG),
                 )
                 .fill(ACCENT)
                 .corner_radius(egui::CornerRadius::same(255));
@@ -323,7 +340,7 @@ impl AuraApp {
             }
             UpdateState::ReadyToRestart(v) => {
                 let btn = egui::Button::new(
-                    RichText::new(format!("↻  Restart into v{v}"))
+                    RichText::new(format!("{}  Restart into v{v}", ph::ARROW_CLOCKWISE))
                         .strong()
                         .color(BG),
                 )
@@ -354,42 +371,68 @@ impl AuraApp {
         }
     }
 
+    /// Full-height sidebar: brand, grouped navigation, and a status stack
+    /// (market bell, trading mode, version/update) pinned to the bottom.
     fn nav_rail(&mut self, ctx: &egui::Context) {
         egui::SidePanel::left("nav")
-            .exact_width(212.0)
+            .exact_width(232.0)
             .resizable(false)
             .frame(
                 egui::Frame::new()
                     .fill(SURFACE)
                     .stroke(Stroke::new(1.0_f32, BORDER))
-                    .inner_margin(Margin::symmetric(12, 16)),
+                    .inner_margin(Margin {
+                        left: 14,
+                        right: 14,
+                        top: 18,
+                        bottom: 14,
+                    }),
             )
             .show(ctx, |ui| {
-                widgets::section_title(ui, "Navigate");
-                ui.add_space(6.0);
-                for page in Page::ALL {
-                    let selected = self.page == page;
-                    let text = RichText::new(page.label()).size(14.5).color(if selected {
-                        TEXT
-                    } else {
-                        MUTED
+                // Brand.
+                ui.horizontal(|ui| {
+                    ui.add(egui::Image::new((self.logo.id(), egui::vec2(36.0, 36.0))));
+                    ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing.y = 0.0;
+                        ui.label(
+                            RichText::new("Aura")
+                                .font(theme::semibold(19.0))
+                                .color(TEXT),
+                        );
+                        ui.label(
+                            RichText::new("Portfolio intelligence")
+                                .size(11.5)
+                                .color(MUTED),
+                        );
                     });
-                    let btn = egui::Button::new(text)
-                        .fill(if selected {
-                            ACCENT.linear_multiply(0.14)
-                        } else {
-                            egui::Color32::TRANSPARENT
-                        })
-                        .stroke(if selected {
-                            Stroke::new(1.0_f32, ACCENT.linear_multiply(0.5))
-                        } else {
-                            Stroke::NONE
-                        })
-                        .min_size(egui::vec2(ui.available_width(), 38.0));
-                    if ui.add(btn).clicked() {
+                });
+                ui.add_space(18.0);
+
+                for page in Page::ALL {
+                    if let Some(group) = page.group() {
+                        ui.add_space(10.0);
+                        ui.horizontal(|ui| {
+                            ui.add_space(8.0);
+                            widgets::section_title(ui, group);
+                        });
+                        ui.add_space(2.0);
+                    }
+                    if nav_item(ui, page.nav(), self.page == page).clicked() {
                         self.page = page;
                     }
                 }
+
+                ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
+                    ui.horizontal(|ui| self.update_button(ui));
+                    ui.add_space(6.0);
+                    let (icon, text, color) = match self.settings.trading_mode {
+                        TradingMode::ReadOnly => (ph::LOCK_SIMPLE, "Read-only", ACCENT),
+                        TradingMode::ReadWrite => (ph::WARNING, "Trading enabled", WARNING),
+                    };
+                    widgets::chip(ui, &format!("{icon}  {text}"), color);
+                    ui.add_space(6.0);
+                    market_bell(ui);
+                });
             });
     }
 
@@ -421,13 +464,69 @@ impl AuraApp {
     }
 }
 
+/// Sidebar navigation row: icon + label, accent bar and tint when active.
+fn nav_item(ui: &mut egui::Ui, (icon, label): (&str, &str), selected: bool) -> egui::Response {
+    let (rect, resp) =
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), 40.0), egui::Sense::click());
+    let p = ui.painter();
+    let hovered = resp.hovered();
+    if selected || hovered {
+        let fill = if selected {
+            ACCENT.linear_multiply(0.12)
+        } else {
+            SURFACE_2
+        };
+        p.rect_filled(rect, egui::CornerRadius::same(10), fill);
+    }
+    if selected {
+        let bar = egui::Rect::from_min_size(
+            rect.left_top() + egui::vec2(0.0, 10.0),
+            egui::vec2(3.0, 20.0),
+        );
+        p.rect_filled(bar, egui::CornerRadius::same(2), ACCENT);
+    }
+    let color = if selected {
+        TEXT
+    } else if hovered {
+        TEXT.linear_multiply(0.85)
+    } else {
+        MUTED
+    };
+    let icon_color = if selected { ACCENT } else { color };
+    p.text(
+        rect.left_center() + egui::vec2(16.0, 0.0),
+        egui::Align2::LEFT_CENTER,
+        icon,
+        egui::FontId::proportional(18.0),
+        icon_color,
+    );
+    let font = if selected {
+        theme::semibold(14.5)
+    } else {
+        egui::FontId::proportional(14.5)
+    };
+    p.text(
+        rect.left_center() + egui::vec2(44.0, 0.0),
+        egui::Align2::LEFT_CENTER,
+        label,
+        font,
+        color,
+    );
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+/// NYSE session status for the sidebar.
 fn market_bell(ui: &mut egui::Ui) {
     let clock = hours::nyse_clock(chrono::Utc::now());
     let (label, color) = match clock.phase {
-        MarketPhase::Open => ("NYSE OPEN · closes in", POSITIVE),
-        MarketPhase::Closed => ("NYSE CLOSED · opens in", MUTED),
+        MarketPhase::Open => ("NYSE closes in", POSITIVE),
+        MarketPhase::Closed => ("NYSE opens in", MUTED),
     };
-    widgets::chip(ui, &format!("🔔 {label} {}", clock.countdown()), color);
+    widgets::chip(
+        ui,
+        &format!("{}  {label} {}", ph::BELL_SIMPLE, clock.countdown()),
+        color,
+    );
 }
 
 impl eframe::App for AuraApp {
@@ -435,52 +534,64 @@ impl eframe::App for AuraApp {
         self.services.portfolio.tick();
         let portfolio_state = self.services.portfolio.snapshot();
 
-        self.top_bar(ctx);
+        // Sidebar first so it spans the full window height.
         self.nav_rail(ctx);
         self.footer(ctx);
 
         let env_before = self.settings.environment;
         egui::CentralPanel::default()
-            .frame(egui::Frame::new().fill(BG).inner_margin(Margin::same(22)))
+            .frame(egui::Frame::new().fill(BG).inner_margin(Margin {
+                left: 28,
+                right: 28,
+                top: 24,
+                bottom: 16,
+            }))
             .show(ctx, |ui| {
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| match self.page {
-                        Page::Dashboard => {
-                            dashboard::show(ui, &self.services.portfolio, &portfolio_state)
-                        }
-                        Page::Holdings => {
-                            self.holdings_page
-                                .show(ui, &self.services.portfolio, &portfolio_state)
-                        }
-                        Page::Dividends => {
-                            dividends::show(ui, &self.services.portfolio, &portfolio_state)
-                        }
-                        Page::Insights => widgets::empty_state(
+                // One scroll state per page, starting at the top whenever the
+                // page is (re)opened, including on launch.
+                let mut scroll = egui::ScrollArea::vertical()
+                    .id_salt(self.page)
+                    .auto_shrink([false, false]);
+                if self.shown_page != Some(self.page) {
+                    scroll = scroll.vertical_scroll_offset(0.0);
+                    self.shown_page = Some(self.page);
+                }
+                scroll.show(ui, |ui| match self.page {
+                    Page::Dashboard => {
+                        dashboard::show(ui, &self.services.portfolio, &portfolio_state)
+                    }
+                    Page::Holdings => {
+                        self.holdings_page
+                            .show(ui, &self.services.portfolio, &portfolio_state)
+                    }
+                    Page::Dividends => {
+                        dividends::show(ui, &self.services.portfolio, &portfolio_state)
+                    }
+                    Page::Insights => widgets::empty_state(
+                        ui,
+                        ph::SPARKLE,
+                        "AI Insights",
+                        "Fundamental + sentiment reports and PDF export arrive in phase 4.",
+                    ),
+                    Page::AiEngine => {
+                        if ai::show(
                             ui,
-                            "💡",
-                            "AI Insights",
-                            "Fundamental + sentiment reports and PDF export arrive in phase 4.",
-                        ),
-                        Page::AiEngine => {
-                            if ai::show(
-                                ui,
-                                &self.services,
-                                &mut self.settings,
-                                &self.telemetry.snapshot(),
-                            ) {
-                                self.save_settings();
-                            }
+                            &self.services,
+                            &mut self.settings,
+                            &self.telemetry.snapshot(),
+                        ) {
+                            self.save_settings();
                         }
-                        Page::Settings => {
-                            if self
-                                .settings_page
-                                .show(ui, &mut self.settings, &self.services.paths)
-                            {
-                                self.save_settings();
-                            }
+                    }
+                    Page::Settings => {
+                        if self
+                            .settings_page
+                            .show(ui, &mut self.settings, &self.services.paths)
+                        {
+                            self.save_settings();
                         }
-                    });
+                    }
+                });
             });
 
         if self.settings.environment != env_before {

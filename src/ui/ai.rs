@@ -2,6 +2,7 @@
 //! catalog with VRAM-aware fit badges, load/unload, and live telemetry.
 
 use eframe::egui::{self, Align, Layout, RichText, Ui};
+use egui_phosphor::regular as ph;
 
 use super::Services;
 use super::theme::palette::*;
@@ -23,10 +24,10 @@ pub fn show(
     let state = svc.llm.snapshot();
     let mut changed = false;
 
-    ui.heading(RichText::new("Local AI engine").strong());
-    ui.label(
-        RichText::new("Everything runs on your machine. No data leaves your computer.")
-            .color(MUTED),
+    widgets::page_title(
+        ui,
+        "AI Engine",
+        "Everything runs on your machine. No data leaves your computer.",
     );
     ui.add_space(12.0);
 
@@ -88,7 +89,8 @@ fn runtime_card(ui: &mut Ui, st: &LlmState, svc: &Services) {
         match &st.runtime {
             RuntimeStatus::Missing => {
                 ui.label("Not installed. Aura downloads a portable build tuned for your hardware.");
-                if accent_button(ui, "⬇  Install runtime").clicked() {
+                if accent_button(ui, &format!("{}  Install runtime", ph::DOWNLOAD_SIMPLE)).clicked()
+                {
                     svc.llm.install_runtime();
                 }
             }
@@ -172,7 +174,10 @@ fn server_card(ui: &mut Ui, st: &LlmState, svc: &Services, settings: &mut Settin
                         .monospace()
                         .color(MUTED),
                 );
-                if ui.button("⏏  Unload & free memory").clicked() {
+                if ui
+                    .button(format!("{}  Unload & free memory", ph::EJECT))
+                    .clicked()
+                {
                     svc.llm.unload();
                 }
             }
@@ -219,7 +224,8 @@ fn catalog(ui: &mut Ui, st: &LlmState, svc: &Services, settings: &mut Settings) 
         widgets::section_title(ui, "Model library");
         ui.label(
             RichText::new(format!(
-                "Recommended for this machine: {} ⭐",
+                "{}  Recommended for this machine: {}",
+                ph::STAR,
                 recommended.name
             ))
             .color(ACCENT),
@@ -254,8 +260,12 @@ fn catalog_row(
 ) -> bool {
     let mut changed = false;
     ui.vertical(|ui| {
-        let star = if recommended { " ⭐" } else { "" };
-        ui.label(RichText::new(format!("{}{star}", spec.name)).strong());
+        ui.horizontal(|ui| {
+            ui.label(RichText::new(spec.name).font(super::theme::semibold(14.0)));
+            if recommended {
+                widgets::chip(ui, &format!("{}  Recommended", ph::STAR), ACCENT);
+            }
+        });
         ui.label(
             RichText::new(format!("{} · {}", spec.quant, spec.blurb))
                 .size(12.0)
@@ -292,7 +302,7 @@ fn catalog_row(
             ui.colored_label(NEGATIVE, "failed").on_hover_text(e);
         }
         None if loaded => {
-            ui.colored_label(POSITIVE, "● loaded");
+            ui.colored_label(POSITIVE, format!("{}  loaded", ph::CHECK_CIRCLE));
         }
         None if downloaded => {
             ui.label("on disk");
@@ -308,7 +318,10 @@ fn catalog_row(
             Some(DownloadStatus::Downloading(_))
         );
         if !downloaded && !downloading {
-            let btn = ui.add_enabled(fit != Fit::TooLarge, egui::Button::new("⬇ Download"));
+            let btn = ui.add_enabled(
+                fit != Fit::TooLarge,
+                egui::Button::new(format!("{}  Download", ph::DOWNLOAD_SIMPLE)),
+            );
             if btn.clicked() {
                 svc.llm.download_model(spec);
             }
@@ -316,7 +329,10 @@ fn catalog_row(
         if downloaded && !loaded {
             let runtime_ready = matches!(st.runtime, RuntimeStatus::Ready(_));
             let btn = ui
-                .add_enabled(runtime_ready, egui::Button::new("▶ Load"))
+                .add_enabled(
+                    runtime_ready,
+                    egui::Button::new(format!("{}  Load", ph::PLAY)),
+                )
                 .on_disabled_hover_text("Install the llama.cpp runtime first");
             if btn.clicked() {
                 settings.selected_model = Some(spec.id.to_string());
@@ -326,7 +342,7 @@ fn catalog_row(
                 }
             }
             if ui
-                .small_button("🗑")
+                .small_button(ph::TRASH)
                 .on_hover_text("Delete from disk")
                 .clicked()
                 && let Err(e) = svc.llm.delete_model(spec)
@@ -334,7 +350,7 @@ fn catalog_row(
                 tracing::error!("delete failed: {e:#}");
             }
         }
-        if loaded && ui.button("⏏ Unload").clicked() {
+        if loaded && ui.button(format!("{}  Unload", ph::EJECT)).clicked() {
             svc.llm.unload();
         }
     });

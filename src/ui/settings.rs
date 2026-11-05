@@ -2,6 +2,7 @@
 //! switch, environment, and updater preferences.
 
 use eframe::egui::{self, RichText, Ui};
+use egui_phosphor::regular as ph;
 
 use super::theme::palette::*;
 use super::widgets::{self, card, chip};
@@ -53,8 +54,8 @@ impl SettingsPage {
             *self = Self::new(settings.environment);
         }
 
-        ui.heading(RichText::new("Settings").strong());
-        ui.add_space(12.0);
+        widgets::page_title(ui, "Settings", "Connection, safety and preferences");
+        ui.add_space(18.0);
 
         card(ui, |ui| {
             widgets::section_title(ui, "Trading212 connection");
@@ -66,7 +67,11 @@ impl SettingsPage {
                         .changed();
                 }
                 if self.stored {
-                    chip(ui, "🔑 Key stored in OS keychain", POSITIVE);
+                    chip(
+                        ui,
+                        &format!("{}  Key stored in OS keychain", ph::KEY),
+                        POSITIVE,
+                    );
                 } else {
                     chip(ui, "No key stored", WARNING);
                 }
@@ -126,7 +131,7 @@ impl SettingsPage {
             ui.radio_value(
                 &mut settings.trading_mode,
                 TradingMode::ReadOnly,
-                "🔒 Read-only (recommended)",
+                format!("{}  Read-only (recommended)", ph::LOCK_SIMPLE),
             );
             ui.horizontal(|ui| {
                 let enabled = self.confirm_write;
@@ -134,7 +139,7 @@ impl SettingsPage {
                     ui.radio_value(
                         &mut settings.trading_mode,
                         TradingMode::ReadWrite,
-                        "⚠ Read & write (can place orders)",
+                        format!("{}  Read & write (can place orders)", ph::WARNING),
                     );
                 });
             });
@@ -177,7 +182,7 @@ impl SettingsPage {
             );
             ui.horizontal(|ui| {
                 if ui
-                    .button("🗑 Clear cached portfolio data")
+                    .button(format!("{}  Clear cached portfolio data", ph::TRASH))
                     .on_hover_text("Deletes the local copy of positions, dividends, deposits and value history for this environment")
                     .clicked()
                 {

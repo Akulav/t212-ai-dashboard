@@ -1,10 +1,13 @@
 //! Filesystem layout.
 //!
-//! Aura prefers **portable mode**: all runtime data (llama.cpp binaries, GGUF
-//! models, logs, settings) lives in an `aura-data/` folder next to the
-//! executable, so "delete the folder" is a complete uninstall. If that folder
-//! is not writable (e.g. installed under `Program Files`, `/usr/bin`, or inside
-//! a macOS `.app` bundle) we fall back to the per-user OS data directory.
+//! * **Installed** (setup.exe / .dmg / .deb / AppImage): data lives in the
+//!   per-user OS data directory (e.g. `%LOCALAPPDATA%\akulav\AuraPortfolio`),
+//!   so it survives updates and uninstalls never touch it by accident.
+//! * **Portable** (the release `.zip`/`.tar.gz`): opt-in via a file named
+//!   `portable` next to the executable (shipped in the archives). All data
+//!   then lives in `aura-data/` beside the exe, so deleting the folder is a
+//!   complete uninstall. An existing `aura-data/` folder also keeps portable
+//!   mode on, for archives extracted before the marker existed.
 //!
 //! Set `AURA_DATA_DIR` to override both.
 
@@ -78,13 +81,18 @@ impl AppPaths {
     }
 }
 
-/// Returns `<exe_dir>/aura-data` if it exists or can be created and written to.
+/// Returns `<exe_dir>/aura-data` when portable mode is requested (a
+/// `portable` marker file, or an existing `aura-data/` folder) and writable.
 fn portable_root() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     if is_inside_macos_bundle(&exe) {
         return None;
     }
-    let dir = exe.parent()?.join("aura-data");
+    let exe_dir = exe.parent()?;
+    let dir = exe_dir.join("aura-data");
+    if !exe_dir.join("portable").is_file() && !dir.is_dir() {
+        return None;
+    }
     std::fs::create_dir_all(&dir).ok()?;
     let probe = dir.join(".write-test");
     std::fs::write(&probe, b"ok").ok()?;

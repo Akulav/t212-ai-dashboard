@@ -96,11 +96,21 @@ foreach ($page in $Pages) {
         $r = New-Object Win+RECT
         [Win]::DwmGetWindowAttribute($h, 9, [ref]$r, 16) | Out-Null
         $w = $r.Right - $r.Left; $hgt = $r.Bottom - $r.Top
-        $bmp = New-Object System.Drawing.Bitmap $w, $hgt
-        $g = [System.Drawing.Graphics]::FromImage($bmp)
-        # Screen copy is reliable for OpenGL surfaces; window is foreground.
-        $g.CopyFromScreen($r.Left, $r.Top, 0, 0, $bmp.Size)
-        $g.Dispose()
+        # Render the window itself (PW_RENDERFULLCONTENT = 2). Unlike a screen
+        # copy this never captures other windows that happen to be on top,
+        # because Windows may refuse to bring a background process to front.
+        $wr = New-Object Win+RECT
+        [Win]::GetWindowRect($h, [ref]$wr) | Out-Null
+        $fw = $wr.Right - $wr.Left; $fh = $wr.Bottom - $wr.Top
+        $full = New-Object System.Drawing.Bitmap $fw, $fh
+        $g = [System.Drawing.Graphics]::FromImage($full)
+        $hdc = $g.GetHdc()
+        $ok = [Win]::PrintWindow($h, $hdc, 2)
+        $g.ReleaseHdc($hdc); $g.Dispose()
+        if (-not $ok) { throw "PrintWindow failed for '$page'" }
+        # Crop the invisible resize border (window rect vs. DWM frame bounds).
+        $bmp = $full.Clone((New-Object System.Drawing.Rectangle ($r.Left - $wr.Left), ($r.Top - $wr.Top), $w, $hgt), $full.PixelFormat)
+        $full.Dispose()
         $file = Join-Path $outDir "$($names[$page]).png"
         $bmp.Save($file, [System.Drawing.Imaging.ImageFormat]::Png)
         $bmp.Dispose()

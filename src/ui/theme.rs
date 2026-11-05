@@ -34,12 +34,108 @@ pub mod palette {
     pub const NEGATIVE: Color32 = Color32::from_rgb(0xEF, 0x44, 0x44);
     /// Warnings.
     pub const WARNING: Color32 = Color32::from_rgb(0xF5, 0x9E, 0x0B);
+    /// Sky blue (chart series).
+    pub const SKY: Color32 = Color32::from_rgb(0x38, 0xBD, 0xF8);
+    /// Pink (chart series).
+    pub const PINK: Color32 = Color32::from_rgb(0xF4, 0x72, 0xB6);
+    /// Orange (chart series).
+    pub const ORANGE: Color32 = Color32::from_rgb(0xFB, 0x92, 0x3C);
+    /// Lime (chart series).
+    pub const LIME: Color32 = Color32::from_rgb(0xA3, 0xE6, 0x35);
+
+    /// Categorical colours for allocation charts, in order.
+    pub const SERIES: [Color32; 7] = [ACCENT, VIOLET, GOLD, SKY, PINK, LIME, ORANGE];
 }
 
 use palette::*;
 
+/// Name of the semibold font family registered by [`install_fonts`].
+pub const SEMIBOLD: &str = "semibold";
+
+/// Semibold font of `size` (headings, KPI values, active navigation).
+pub fn semibold(size: f32) -> FontId {
+    FontId::new(size, FontFamily::Name(SEMIBOLD.into()))
+}
+
+/// Native UI fonts per platform, tried in order (regular, semibold).
+/// Loaded at runtime from the OS: nothing is bundled or downloaded, and
+/// egui's built-in font remains the fallback.
+const FONT_CANDIDATES: &[(&str, &str)] = &[
+    // Windows
+    (
+        "C:\\Windows\\Fonts\\segoeui.ttf",
+        "C:\\Windows\\Fonts\\seguisb.ttf",
+    ),
+    // macOS
+    (
+        "/System/Library/Fonts/SFNS.ttf",
+        "/System/Library/Fonts/SFNS.ttf",
+    ),
+    (
+        "/System/Library/Fonts/Helvetica.ttc",
+        "/System/Library/Fonts/Helvetica.ttc",
+    ),
+    // Linux
+    (
+        "/usr/share/fonts/opentype/inter/Inter-Regular.otf",
+        "/usr/share/fonts/opentype/inter/Inter-SemiBold.otf",
+    ),
+    (
+        "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSans-SemiBold.ttf",
+    ),
+    (
+        "/usr/share/fonts/noto/NotoSans-Regular.ttf",
+        "/usr/share/fonts/noto/NotoSans-SemiBold.ttf",
+    ),
+    (
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    ),
+];
+
+/// Registers the native UI font (if found), a semibold family and the
+/// Phosphor icon font.
+pub fn install_fonts(ctx: &egui::Context) {
+    use std::sync::Arc;
+    let mut fonts = egui::FontDefinitions::default();
+    egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
+
+    let read = |p: &str| std::fs::read(p).ok();
+    let found = FONT_CANDIDATES.iter().find_map(|(reg, semi)| {
+        let regular = read(reg)?;
+        Some((regular.clone(), read(semi).unwrap_or(regular)))
+    });
+
+    let base: Vec<String> = fonts
+        .families
+        .get(&FontFamily::Proportional)
+        .cloned()
+        .unwrap_or_default();
+    let mut semibold_family = base.clone();
+    if let Some((regular, semi)) = found {
+        fonts.font_data.insert(
+            "ui-regular".into(),
+            Arc::new(egui::FontData::from_owned(regular)),
+        );
+        fonts.font_data.insert(
+            "ui-semibold".into(),
+            Arc::new(egui::FontData::from_owned(semi)),
+        );
+        if let Some(prop) = fonts.families.get_mut(&FontFamily::Proportional) {
+            prop.insert(0, "ui-regular".into());
+        }
+        semibold_family.insert(0, "ui-semibold".into());
+    }
+    fonts
+        .families
+        .insert(FontFamily::Name(SEMIBOLD.into()), semibold_family);
+    ctx.set_fonts(fonts);
+}
+
 /// Applies the dark theme, typography and spacing.
 pub fn apply(ctx: &egui::Context) {
+    install_fonts(ctx);
     ctx.set_theme(egui::ThemePreference::Dark);
 
     let mut v = egui::Visuals::dark();
@@ -80,7 +176,7 @@ pub fn apply(ctx: &egui::Context) {
     ctx.style_mut_of(egui::Theme::Dark, |style| {
         use FontFamily::{Monospace, Proportional};
         style.text_styles = [
-            (TextStyle::Heading, FontId::new(22.0, Proportional)),
+            (TextStyle::Heading, semibold(24.0)),
             (TextStyle::Body, FontId::new(14.0, Proportional)),
             (TextStyle::Button, FontId::new(14.0, Proportional)),
             (TextStyle::Small, FontId::new(11.5, Proportional)),

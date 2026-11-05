@@ -118,6 +118,20 @@ Keep the catalog ordered by size, because `recommend()` relies on it. Then run `
 Add an `AssetRule` in `llm/runtime.rs::asset_rules` (e.g. ROCm/HIP for AMD on Windows), with a detection
 flag in `HardwareProfile` if needed, and extend the `select_assets` tests with the real asset name.
 
+## Icons & installers
+
+- **Icons** are generated from the same code that draws the in-app logo (`ui::theme::app_icon`). After changing the logo, run `cargo run --example gen_icons` to regenerate `assets/icons/` (`.ico`, `.icns`, PNGs) and commit them. On Windows, `build.rs` embeds `icon.ico` and version info into the `.exe`.
+- **Installers** use [cargo-packager](https://github.com/crabnebula-dev/cargo-packager), configured under `[package.metadata.packager]` in `Cargo.toml`:
+
+  ```bash
+  cargo install cargo-packager --locked --version 0.11.8
+  cargo build --release
+  cargo packager --release --formats nsis   # Windows → target/packages/*-setup.exe
+  ```
+
+  macOS uses `--formats app,dmg` and Linux uses `--formats deb,appimage`. CI builds all of them on each release.
+- **Trading212 diagnostics:** `cargo run --example t212_diagnose` checks each endpoint with your stored key (read-only, and it never prints secrets). `-- sync` runs the full sync into a throwaway folder.
+
 ## Demo mode & screenshots
 
 - `AURA_DEMO=1` swaps the Trading212 sync for the synthetic portfolio in `src/portfolio/demo.rs`. It makes no network, keychain or cache access, so it's ideal for UI work.
