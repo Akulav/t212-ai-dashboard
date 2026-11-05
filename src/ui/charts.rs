@@ -38,7 +38,23 @@ pub fn value_history(
         .allow_zoom(false)
         .allow_boxed_zoom(false)
         .show_background(false)
-        .x_axis_formatter(|mark, _| date_label(mark.value))
+        .show_x(false)
+        .show_y(false)
+        // Grid every ~month / quarter / year; label only quarter-or-larger
+        // marks so dates never collide.
+        .x_grid_spacer(egui_plot::uniform_grid_spacer(|_| {
+            [30.4375, 91.3125, 365.25]
+        }))
+        .x_axis_formatter(|mark, _| {
+            if mark.step_size < 80.0 {
+                String::new()
+            } else {
+                // Uniform marks land within a day or two of quarter starts.
+                Utc.timestamp_opt(((mark.value + 3.0) * DAY) as i64, 0)
+                    .single()
+                    .map_or_else(String::new, |d| d.format("%b %y").to_string())
+            }
+        })
         .y_axis_formatter(move |mark, _| format::compact_money(mark.value, &ccy_axis))
         .label_formatter(move |name, p| {
             if name.is_empty() {
@@ -112,6 +128,8 @@ pub fn monthly_dividends(ui: &mut Ui, months: &[(i32, u32, f64)], ccy: &str, hei
         .allow_zoom(false)
         .allow_boxed_zoom(false)
         .show_background(false)
+        .show_x(false)
+        .show_y(false)
         .x_axis_formatter(move |mark, _| {
             let i = mark.value.round();
             if (mark.value - i).abs() < 1e-6 && i >= 0.0 {

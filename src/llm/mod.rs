@@ -450,6 +450,22 @@ impl LlmManager {
 
     /// Sends a non-streaming chat completion to the local model.
     pub async fn chat(&self, messages: Vec<ChatMessage>, max_tokens: u32) -> Result<String> {
+        self.complete(messages, max_tokens, false).await
+    }
+
+    /// Like [`Self::chat`] but grammar-constrained to a JSON object
+    /// (`response_format: json_object`), with "thinking" disabled for models
+    /// that support it (Qwen 3.x), so the reply is directly parseable.
+    pub async fn chat_json(&self, messages: Vec<ChatMessage>, max_tokens: u32) -> Result<String> {
+        self.complete(messages, max_tokens, true).await
+    }
+
+    async fn complete(
+        &self,
+        messages: Vec<ChatMessage>,
+        max_tokens: u32,
+        json: bool,
+    ) -> Result<String> {
         #[derive(Deserialize)]
         struct Choice {
             message: ChatMessage,
@@ -462,13 +478,17 @@ impl LlmManager {
         let base = self
             .endpoint()
             .ok_or_else(|| anyhow!("no model is loaded"))?;
-        let body = serde_json::json!({
+        let mut body = serde_json::json!({
             "model": "aura",
             "messages": messages,
             "max_tokens": max_tokens,
             "temperature": 0.3,
             "stream": false,
+            "chat_template_kwargs": { "enable_thinking": false },
         });
+        if json {
+            body["response_format"] = serde_json::json!({ "type": "json_object" });
+        }
         let resp: Response = self
             .inner
             .http

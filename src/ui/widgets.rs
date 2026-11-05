@@ -10,15 +10,157 @@ use super::theme::{lerp, palette::*, semibold};
 use crate::net::fmt_bytes;
 use crate::telemetry::TelemetrySnapshot;
 
-/// A rounded surface card.
-pub fn card<R>(ui: &mut Ui, add_contents: impl FnOnce(&mut Ui) -> R) -> R {
+/// The single gutter used between cards, horizontally and vertically.
+pub const GAP: f32 = 16.0;
+
+fn card_frame() -> egui::Frame {
     egui::Frame::new()
         .fill(SURFACE)
         .stroke(Stroke::new(1.0_f32, BORDER))
         .corner_radius(CornerRadius::same(14))
-        .inner_margin(Margin::same(16))
-        .show(ui, add_contents)
+        .inner_margin(Margin::same(18))
+}
+
+/// A rounded surface card that fills the available width.
+pub fn card<R>(ui: &mut Ui, add_contents: impl FnOnce(&mut Ui) -> R) -> R {
+    card_frame()
+        .show(ui, |ui| {
+            ui.set_min_width(ui.available_width());
+            add_contents(ui)
+        })
         .inner
+}
+
+/// A row of cards on a column grid.
+///
+/// `spans` gives each card's width in grid columns (e.g. `[1, 1, 1, 1]`,
+/// `[3, 1]`, `[2, 1, 1]`), so rows with the same total line up exactly.
+/// All gutters are [`GAP`], and every card in the row is stretched to the
+/// height of the tallest one (measured on the previous frame), which keeps
+/// rows visually symmetric without hand-tuned minimum heights. `id` must be
+/// unique per row on a page.
+pub fn card_row(ui: &mut Ui, id: &str, spans: &[usize], mut add: impl FnMut(usize, &mut Ui)) {
+    let total: usize = spans.iter().sum::<usize>().max(1);
+    let width = ui.available_width();
+    let unit = (width - GAP * (total - 1) as f32) / total as f32;
+    let key = ui.id().with(("card_row", id));
+    let target: f32 = ui.ctx().data(|d| d.get_temp(key)).unwrap_or(0.0);
+    let mut tallest = 0.0_f32;
+
+    ui.horizontal_top(|ui| {
+        ui.spacing_mut().item_spacing.x = GAP;
+        for (i, &span) in spans.iter().enumerate() {
+            let span = span.max(1);
+            let w = unit * span as f32 + GAP * (span - 1) as f32;
+            ui.allocate_ui_with_layout(Vec2::new(w, 0.0), Layout::top_down(Align::Min), |ui| {
+                ui.set_width(w);
+                card_frame().show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    let start = ui.cursor().min.y;
+                    ui.set_min_height(target);
+                    add(i, ui);
+                    tallest = tallest.max(ui.cursor().min.y - start);
+                });
+            });
+        }
+    });
+
+    if (tallest - target).abs() > 0.5 {
+        ui.ctx().data_mut(|d| d.insert_temp(key, tallest));
+        ui.ctx().request_repaint();
+    }
+}
+
+/// One KPI tile's content (render inside [`card_row`] or [`card`]).
+#[derive(Clone)]
+pub struct Kpi<'a> {
+    /// Phosphor icon.
+    pub icon: &'a str,
+    /// Upper-case label.
+    pub label: &'a str,
+    /// Big value.
+    pub value: String,
+    /// Muted caption under the value.
+    pub caption: String,
+    /// Accent colour (icon badge, sparkline).
+    pub accent: Color32,
+    /// Colour of the value text.
+    pub value_color: Color32,
+    /// Optional sparkline series.
+    pub trend: Option<&'a [f64]>,
+}
+
+impl<'a> Kpi<'a> {
+    /// New KPI with default text colour and no trend.
+    pub fn new(
+        icon: &'a str,
+        label: &'a str,
+        value: impl Into<String>,
+        caption: impl Into<String>,
+        accent: Color32,
+    ) -> Self {
+        Self {
+            icon,
+            label,
+            value: value.into(),
+            caption: caption.into(),
+            accent,
+            value_color: TEXT,
+            trend: None,
+        }
+    }
+
+    /// Colours the value (e.g. green/red for P/L).
+    pub fn value_color(mut self, color: Color32) -> Self {
+        self.value_color = color;
+        self
+    }
+
+    /// Adds a sparkline.
+    pub fn trend(mut self, values: &'a [f64]) -> Self {
+        self.trend = Some(values);
+        self
+    }
+
+    /// Draws the tile content.
+    pub fn show(&self, ui: &mut Ui) {
+        ui.horizontal(|ui| {
+            icon_badge(ui, self.icon, self.accent, 28.0);
+            ui.add_space(2.0);
+            section_title(ui, self.label);
+        });
+        ui.add_space(10.0);
+        ui.label(
+            RichText::new(&self.value)
+                .font(semibold(28.0))
+                .color(self.value_color),
+        );
+        ui.label(RichText::new(&self.caption).size(12.5).color(MUTED));
+        if let Some(values) = self.trend.filter(|v| v.len() > 1) {
+            ui.add_space(6.0);
+            trend_line(ui, values, self.accent, 30.0);
+        }
+    }
+}
+
+/// A row of equal-width, equal-height KPI tiles.
+pub fn kpi_row(ui: &mut Ui, id: &str, kpis: &[Kpi<'_>]) {
+    let spans = vec![1; kpis.len()];
+    card_row(ui, id, &spans, |i, ui| kpis[i].show(ui));
+}
+
+/// Card header: muted icon, section title and an optional right-aligned note.
+pub fn card_header(ui: &mut Ui, icon: &str, title: &str, note: &str) {
+    ui.horizontal(|ui| {
+        ui.label(RichText::new(icon).size(16.0).color(MUTED));
+        section_title(ui, title);
+        if !note.is_empty() {
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.label(RichText::new(note).size(11.5).color(MUTED));
+            });
+        }
+    });
+    ui.add_space(10.0);
 }
 
 /// Prepares `ui` for a data table: cells never wrap (money stays on one
@@ -81,26 +223,9 @@ pub fn kpi_with(
     value_color: Color32,
     trend: Option<&[f64]>,
 ) {
-    card(ui, |ui| {
-        ui.set_min_height(118.0);
-        ui.horizontal(|ui| {
-            icon_badge(ui, icon, accent, 28.0);
-            ui.add_space(2.0);
-            section_title(ui, label);
-        });
-        ui.add_space(8.0);
-        ui.label(RichText::new(value).font(semibold(28.0)).color(value_color));
-        ui.label(RichText::new(caption).size(12.5).color(MUTED));
-        // Always reserve the sparkline row so every KPI card in a row has
-        // the same height, with or without a trend.
-        ui.add_space(6.0);
-        match trend.filter(|v| v.len() > 1) {
-            Some(values) => trend_line(ui, values, accent, 30.0),
-            None => {
-                ui.allocate_exact_size(Vec2::new(ui.available_width(), 30.0), Sense::hover());
-            }
-        }
-    });
+    let mut k = Kpi::new(icon, label, value, caption, accent).value_color(value_color);
+    k.trend = trend;
+    card(ui, |ui| k.show(ui));
 }
 
 /// Borderless sparkline scaled to the series' own min..max.
@@ -173,6 +298,93 @@ pub fn banner(ui: &mut Ui, icon: &str, text: &str, color: Color32) {
                 ui.add(egui::Label::new(RichText::new(text).size(13.0).color(TEXT)).wrap());
             });
         });
+}
+
+/// Paints a donut ring centred in `rect`.
+fn paint_donut(
+    ui: &Ui,
+    rect: egui::Rect,
+    slices: &[(String, f64, Color32)],
+    center_big: &str,
+    center_small: &str,
+) {
+    let total: f64 = slices.iter().map(|s| s.1).sum();
+    let p = ui.painter_at(rect.expand(4.0));
+    let c = rect.center();
+    let diameter = rect.width().min(rect.height());
+    let thickness = diameter * 0.15;
+    let r_mid = diameter / 2.0 - 2.0 - thickness / 2.0;
+    if total > 0.0 {
+        let mut start = -std::f32::consts::FRAC_PI_2;
+        for (_, v, color) in slices {
+            let sweep = (*v / total) as f32 * std::f32::consts::TAU;
+            let gap = 0.025_f32.min(sweep / 4.0);
+            let (a0, a1) = (start + gap, start + sweep - gap);
+            let steps = ((sweep / 0.04).ceil() as usize).max(2);
+            let pts: Vec<egui::Pos2> = (0..=steps)
+                .map(|i| c + Vec2::angled(a0 + (a1 - a0) * i as f32 / steps as f32) * r_mid)
+                .collect();
+            p.add(Shape::line(pts, Stroke::new(thickness, *color)));
+            start += sweep;
+        }
+    } else {
+        p.circle_stroke(c, r_mid, Stroke::new(thickness, SURFACE_2));
+    }
+    p.text(
+        c - Vec2::new(0.0, 7.0),
+        egui::Align2::CENTER_CENTER,
+        center_big,
+        semibold(22.0),
+        TEXT,
+    );
+    p.text(
+        c + Vec2::new(0.0, 14.0),
+        egui::Align2::CENTER_CENTER,
+        center_small,
+        FontId::proportional(11.5),
+        MUTED,
+    );
+}
+
+/// Donut centred on top with a full-width, right-aligned legend underneath
+/// (fits narrow cards).
+pub fn donut_stacked(
+    ui: &mut Ui,
+    slices: &[(String, f64, Color32)],
+    center_big: &str,
+    center_small: &str,
+    diameter: f32,
+) {
+    let total: f64 = slices.iter().map(|s| s.1).sum();
+    let (row, _) =
+        ui.allocate_exact_size(Vec2::new(ui.available_width(), diameter), Sense::hover());
+    let rect = egui::Rect::from_center_size(row.center(), Vec2::splat(diameter));
+    paint_donut(ui, rect, slices, center_big, center_small);
+    ui.add_space(14.0);
+    // Two-column legend keeps the card compact and balanced.
+    let col_w = (ui.available_width() - GAP) / 2.0;
+    for pair in slices.chunks(2) {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = GAP;
+            for (label, v, color) in pair {
+                ui.allocate_ui_with_layout(
+                    Vec2::new(col_w, 20.0),
+                    Layout::left_to_right(Align::Center),
+                    |ui| {
+                        ui.set_width(col_w);
+                        let (dot, _) = ui.allocate_exact_size(Vec2::splat(10.0), Sense::hover());
+                        ui.painter()
+                            .rect_filled(dot.shrink(1.0), CornerRadius::same(2), *color);
+                        ui.label(RichText::new(label).size(12.0).color(MUTED));
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            let share = if total > 0.0 { v / total * 100.0 } else { 0.0 };
+                            ui.label(RichText::new(format!("{share:.1}%")).monospace().size(12.0));
+                        });
+                    },
+                );
+            }
+        });
+    }
 }
 
 /// Donut chart with a legend. `slices` are `(label, value, colour)`.

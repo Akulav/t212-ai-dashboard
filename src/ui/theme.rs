@@ -186,6 +186,8 @@ pub fn apply(ctx: &egui::Context) {
         style.spacing.item_spacing = Vec2::new(10.0, 8.0);
         style.spacing.button_padding = Vec2::new(12.0, 6.0);
         style.spacing.interact_size.y = 30.0;
+        // Solid scrollbar with its own gutter, so it never overlaps card edges.
+        style.spacing.scroll = egui::style::ScrollStyle::solid();
     });
 }
 

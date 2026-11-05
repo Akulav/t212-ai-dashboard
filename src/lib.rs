@@ -15,6 +15,8 @@
 //! | [`secrets`]   | Trading212 credentials in the OS keychain via `keyring`             |
 //! | [`t212`]      | Trading212 API client: auth, rate limits, pagination, write guard   |
 //! | [`portfolio`] | Sync service, local cache, holdings/dividend/tax analytics          |
+//! | [`insights`] | Phase 4: fundamentals, scoring, opportunities, local-LLM analysis   |
+//! | [`report`]   | Branded PDF report (Typst): portfolio + AI insights                 |
 //! | [`net`]       | Shared HTTP client, resumable downloads, GitHub release lookup      |
 //! | [`archive`]   | Safe `.zip` / `.tar.gz` extraction                                  |
 //! | [`llm`]       | llama.cpp runtime install, model catalog, server process lifecycle  |
@@ -28,11 +30,13 @@
 
 pub mod archive;
 pub mod config;
+pub mod insights;
 pub mod llm;
 pub mod market;
 pub mod net;
 pub mod paths;
 pub mod portfolio;
+pub mod report;
 pub mod secrets;
 pub mod t212;
 pub mod telemetry;

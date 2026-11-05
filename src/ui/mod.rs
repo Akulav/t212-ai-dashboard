@@ -7,6 +7,7 @@ pub mod dashboard;
 pub mod dividends;
 pub mod format;
 pub mod holdings;
+pub mod insights;
 pub mod settings;
 pub mod theme;
 pub mod widgets;
@@ -108,6 +109,8 @@ pub struct Services {
     pub llm: LlmManager,
     /// Trading212 sync service.
     pub portfolio: PortfolioService,
+    /// Phase-4 insights engine.
+    pub insights: crate::insights::InsightsService,
 }
 
 /// The application state driven by `eframe`.
@@ -122,6 +125,7 @@ pub struct AuraApp {
     logo: egui::TextureHandle,
     settings_page: settings::SettingsPage,
     holdings_page: holdings::HoldingsPage,
+    insights_page: insights::InsightsPage,
 }
 
 /// Page header: title + subtitle on the left, connection chip, sync status
@@ -231,6 +235,18 @@ impl AuraApp {
             paths.clone(),
             settings.environment,
         );
+        let provider = if crate::portfolio::demo::enabled() {
+            crate::insights::fundamentals::Provider::Demo
+        } else {
+            settings.fundamentals_provider.clone()
+        };
+        let insights = crate::insights::InsightsService::new(
+            rt.clone(),
+            http.clone(),
+            paths.clone(),
+            llm.clone(),
+            provider,
+        );
 
         let app = Self {
             services: Services {
@@ -239,8 +255,10 @@ impl AuraApp {
                 paths,
                 llm,
                 portfolio,
+                insights,
             },
             holdings_page: holdings::HoldingsPage::default(),
+            insights_page: insights::InsightsPage::default(),
             settings,
             telemetry,
             update: Arc::new(Mutex::new(UpdateState::Idle)),
@@ -567,12 +585,9 @@ impl eframe::App for AuraApp {
                     Page::Dividends => {
                         dividends::show(ui, &self.services.portfolio, &portfolio_state)
                     }
-                    Page::Insights => widgets::empty_state(
-                        ui,
-                        ph::SPARKLE,
-                        "AI Insights",
-                        "Fundamental + sentiment reports and PDF export arrive in phase 4.",
-                    ),
+                    Page::Insights => self
+                        .insights_page
+                        .show(ui, &self.services, &portfolio_state),
                     Page::AiEngine => {
                         if ai::show(
                             ui,
@@ -589,6 +604,11 @@ impl eframe::App for AuraApp {
                             .show(ui, &mut self.settings, &self.services.paths)
                         {
                             self.save_settings();
+                            if !crate::portfolio::demo::enabled() {
+                                self.services
+                                    .insights
+                                    .set_provider(self.settings.fundamentals_provider.clone());
+                            }
                         }
                     }
                 });
@@ -609,6 +629,8 @@ impl eframe::App for AuraApp {
         // Live clock + telemetry need ~1 Hz; downloads/loading animate faster.
         let busy = self.services.llm.snapshot().is_busy()
             || self.services.portfolio.is_syncing()
+            || self.services.insights.is_running()
+            || self.insights_page.is_busy()
             || matches!(
                 *self.update.lock(),
                 UpdateState::Downloading(..) | UpdateState::Checking

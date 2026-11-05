@@ -6,7 +6,7 @@ use egui_phosphor::regular as ph;
 
 use super::Services;
 use super::theme::palette::*;
-use super::widgets::{self, card, chip};
+use super::widgets::{self, GAP, card, card_row, chip};
 use crate::config::Settings;
 use crate::llm::models::{self, Fit, ModelSpec};
 use crate::llm::runtime::InstallStage;
@@ -29,23 +29,22 @@ pub fn show(
         "AI Engine",
         "Everything runs on your machine. No data leaves your computer.",
     );
-    ui.add_space(12.0);
+    ui.add_space(20.0);
 
-    ui.columns(3, |c| {
-        hardware_card(&mut c[0], &state, svc);
-        runtime_card(&mut c[1], &state, svc);
-        changed |= server_card(&mut c[2], &state, svc, settings);
+    card_row(ui, "ai-top", &[1, 1, 1], |i, ui| match i {
+        0 => hardware_card(ui, &state, svc),
+        1 => runtime_card(ui, &state, svc),
+        _ => changed |= server_card(ui, &state, svc, settings),
     });
-    ui.add_space(12.0);
+    ui.add_space(GAP);
     widgets::telemetry_panel(ui, telemetry);
-    ui.add_space(12.0);
+    ui.add_space(GAP);
     changed |= catalog(ui, &state, svc, settings);
     changed
 }
 
 fn hardware_card(ui: &mut Ui, st: &LlmState, svc: &Services) {
-    card(ui, |ui| {
-        ui.set_min_height(150.0);
+    plain(ui, |ui| {
         ui.horizontal(|ui| {
             widgets::section_title(ui, "Hardware");
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -83,8 +82,7 @@ fn hardware_card(ui: &mut Ui, st: &LlmState, svc: &Services) {
 }
 
 fn runtime_card(ui: &mut Ui, st: &LlmState, svc: &Services) {
-    card(ui, |ui| {
-        ui.set_min_height(150.0);
+    plain(ui, |ui| {
         widgets::section_title(ui, "llama.cpp runtime");
         match &st.runtime {
             RuntimeStatus::Missing => {
@@ -139,8 +137,7 @@ fn runtime_card(ui: &mut Ui, st: &LlmState, svc: &Services) {
 
 fn server_card(ui: &mut Ui, st: &LlmState, svc: &Services, settings: &mut Settings) -> bool {
     let mut changed = false;
-    card(ui, |ui| {
-        ui.set_min_height(150.0);
+    plain(ui, |ui| {
         widgets::section_title(ui, "Model server");
         match &st.server {
             ServerStatus::Unloaded => {
@@ -363,4 +360,9 @@ fn accent_button(ui: &mut Ui, text: &str) -> egui::Response {
 
 fn display_name(id: &str) -> &str {
     models::find(id).map_or(id, |m| m.name)
+}
+
+/// Content of a card drawn by [card_row] (which supplies the frame).
+fn plain<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
+    add(ui)
 }

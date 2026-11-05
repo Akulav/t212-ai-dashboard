@@ -64,6 +64,8 @@ pub struct Settings {
     pub context_size: u32,
     /// Load the selected model automatically on startup.
     pub auto_load_model: bool,
+    /// Source of company fundamentals for AI Insights.
+    pub fundamentals_provider: crate::insights::fundamentals::Provider,
 }
 
 impl Default for Settings {
@@ -75,6 +77,7 @@ impl Default for Settings {
             selected_model: None,
             context_size: 8192,
             auto_load_model: false,
+            fundamentals_provider: Default::default(),
         }
     }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "aura-portfolio"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.85"
 authors = ["akulav"]
@@ -65,6 +65,7 @@ nvidia = ["dep:nvml-wrapper"]
 # --- GUI ---------------------------------------------------------------------
 eframe = "0.32"
 egui_plot = "0.33" # 0.33.x is the release line built against egui 0.32
+egui_extras = { version = "0.32", default-features = false } # TableBuilder
 egui-phosphor = "0.10" # Phosphor icon font (MIT), 0.10.x targets egui 0.32
 
 # --- Async + networking ------------------------------------------------------
@@ -100,11 +101,18 @@ tar = "0.4"
 flate2 = "1"
 self-replace = "1"
 
+# --- PDF reports (Typst 0.15 as a library) -----------------------------------
+typst-as-lib = { version = "0.17", features = ["typst-kit-fonts", "typst-kit-embed-fonts"] }
+typst-pdf = "0.15"
+typst = "0.15"
+typst-layout = "0.15"
+
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util", "macros", "rt"] }
 # Used by `cargo run --example gen_icons` to (re)generate assets/icons/.
 image = { version = "0.25", default-features = false, features = ["png", "ico"] }
 icns = "0.3"
+typst-render = "0.15"
 
 [target.'cfg(windows)'.build-dependencies]
 # Embeds the icon + version info into aura-portfolio.exe.

@@ -13,7 +13,7 @@
   pwsh scripts/screenshots.ps1 -Release -Pages dashboard,dividends
 #>
 param(
-    [string[]]$Pages = @('dashboard', 'holdings', 'dividends', 'ai'),
+    [string[]]$Pages = @('dashboard', 'holdings', 'dividends', 'insights', 'ai'),
     [switch]$Release,
     [int]$SettleSeconds = 5,
     # Physical pixels; clamped to the primary screen's work area.
@@ -22,6 +22,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# `-File` passes "a,b" as one string; accept comma lists either way.
+$Pages = @($Pages | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 $root = Split-Path -Parent $PSScriptRoot
 $outDir = Join-Path $root 'docs\screenshots'
 New-Item -ItemType Directory -Force $outDir | Out-Null
@@ -69,7 +71,7 @@ public static class Win {
 '@
 [Win]::SetProcessDPIAware() | Out-Null
 
-$names = @{ dashboard = 'dashboard'; holdings = 'holdings'; dividends = 'dividends'; ai = 'ai-engine'; settings = 'settings' }
+$names = @{ dashboard = 'dashboard'; holdings = 'holdings'; dividends = 'dividends'; insights = 'insights'; ai = 'ai-engine'; settings = 'settings' }
 $dataDir = Join-Path ([IO.Path]::GetTempPath()) "aura-screenshots-$PID"
 
 foreach ($page in $Pages) {

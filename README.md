@@ -46,8 +46,8 @@ and a zero-config local LLM analyst powered by `llama.cpp`.
 | Holdings | Dividends |
 |:---:|:---:|
 | <img src="docs/screenshots/holdings.png" alt="Holdings table with P/L, FX, yield on cost and weights" width="420"/> | <img src="docs/screenshots/dividends.png" alt="Monthly dividend income, projected calendar and top payers" width="420"/> |
-| **Local AI engine** | |
-| <img src="docs/screenshots/ai-engine.png" alt="Hardware detection, llama.cpp runtime, telemetry and model library" width="420"/> | |
+| **AI Insights** | **Local AI engine** |
+| <img src="docs/screenshots/insights.png" alt="AI insights: portfolio score, buy opportunities, observations and sector mix" width="420"/> | <img src="docs/screenshots/ai-engine.png" alt="Hardware detection, llama.cpp runtime, telemetry and model library" width="420"/> |
 
 <sub>Captured from the real app in demo mode (<code>AURA_DEMO=1</code>), which uses a sample portfolio, not real account data.
 Regenerate with <code>scripts/screenshots.ps1</code>.</sub>
@@ -82,6 +82,7 @@ Regenerate with <code>scripts/screenshots.ps1</code>.</sub>
 <td valign="top">
 
 ### 🧠 Local AI analyst
+- **AI Insights:** P/E, PEG, FCF yield, growth, margins and quarterly results (SEC EDGAR, US listings) feed a transparent 0–100 score and **buy-opportunity screen**; a local model writes the thesis, risks and recommendations
 - **Zero-config:** downloads a portable `llama.cpp` build on first launch
 - Picks **CUDA / Vulkan / Metal / CPU** to match your hardware
 - **VRAM-aware model recommendations** with fit badges
@@ -96,7 +97,7 @@ Regenerate with <code>scripts/screenshots.ps1</code>.</sub>
 - No telemetry and no cloud AI: your portfolio stays on your machine
 - SHA-256-verified **auto-updater** from GitHub Releases
 - 📈 Live **RAM / VRAM telemetry** widget for the LLM
-- 📄 Polished **PDF reports** of your portfolio and AI insights
+- 📄 Branded **PDF reports** of your portfolio and AI insights (Typst)
 
 </td>
 </tr>
@@ -108,9 +109,9 @@ Regenerate with <code>scripts/screenshots.ps1</code>.</sub>
 |:-----:|-------|:------:|
 | 1 | App shell, theme, LLM runtime/model manager, telemetry, updater, CI/CD | ✅ |
 | 2 | Trading212 client: account, positions, history, dividends, tax | ✅ |
-| 3 | Macro data (CPI, M2, gold) + DuckDuckGo sentiment scraper | ⏳ |
-| 4 | AI fundamental analysis (P/E, cash flow, quarterly results) | ⏳ |
-| 5 | PDF reports (Typst), charts, polish | ⏳ |
+| 3 | Macro data (CPI, M2, gold) + news sentiment | ⏳ |
+| 4 | AI insights: fundamentals (SEC EDGAR), scoring, buy opportunities, local-LLM analysis | ✅ |
+| 5 | Branded PDF reports (Typst) — "Powered by AI · Made by Akulav" | ✅ |
 
 ## 🚀 Quick start
 
@@ -121,7 +122,6 @@ Download the installer for your platform from the [**latest release**](https://g
 |---|---|---|
 | Windows 10/11 | `aura-portfolio-vX.Y.Z-windows-x64-setup.exe` | `…-x86_64-pc-windows-msvc.zip` |
 | macOS Apple Silicon | `aura-portfolio-vX.Y.Z-macos-apple-silicon.dmg` | `…-aarch64-apple-darwin.tar.gz` |
-| macOS Intel | `aura-portfolio-vX.Y.Z-macos-intel.dmg` | `…-x86_64-apple-darwin.tar.gz` |
 | Linux | `…-linux-x64.deb` or `…-linux-x64.AppImage` | `…-x86_64-unknown-linux-gnu.tar.gz` |
 
 - **Windows:** run the setup. It installs for your user only (no admin prompt), adds Start Menu and Desktop shortcuts, and registers an uninstaller in *Apps & features*.
@@ -241,7 +241,7 @@ Closing Aura **always** frees the model's memory:
 t212-ai-dashboard/
 ├── .github/workflows/
 │   ├── ci.yml            # fmt · clippy -D warnings · tests · rustdoc on 3 OSes
-│   └── release.yml       # after green CI: new version → 4-target build → GitHub Release
+│   └── release.yml       # after green CI: new version → Windows/Linux/macOS-arm build → GitHub Release
 ├── assets/               # logo.svg, banner.svg
 ├── src/
 │   ├── main.rs           # entry point: runtime, panic hook, eframe

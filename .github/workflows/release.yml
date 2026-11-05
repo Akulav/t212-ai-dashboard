@@ -1,4 +1,4 @@
-# Builds Aura Portfolio for Windows, macOS (Apple Silicon + Intel) and Linux
+# Builds Aura Portfolio for Windows x64, Linux x64 and macOS (Apple Silicon)
 # and publishes a GitHub Release. The in-app updater consumes these exact
 # asset names:
 #
@@ -91,16 +91,12 @@ jobs:
             archive: tar.gz
             formats: deb,appimage
             label: linux-x64
+          # macOS: Apple Silicon only (no Intel Mac builds).
           - os: macos-14
             target: aarch64-apple-darwin
             archive: tar.gz
             formats: app,dmg
             label: macos-apple-silicon
-          - os: macos-14
-            target: x86_64-apple-darwin
-            archive: tar.gz
-            formats: app,dmg
-            label: macos-intel
     env:
       CARGO_PACKAGER_VERSION: 0.11.8
       # linuxdeploy (AppImage) without FUSE on CI runners.
@@ -220,7 +216,6 @@ jobs:
             |---|---|---|
             | Windows 10/11 | `aura-portfolio-${{ needs.version.outputs.tag }}-windows-x64-setup.exe` | `…-x86_64-pc-windows-msvc.zip` |
             | macOS Apple Silicon | `aura-portfolio-${{ needs.version.outputs.tag }}-macos-apple-silicon.dmg` | `…-aarch64-apple-darwin.tar.gz` |
-            | macOS Intel | `aura-portfolio-${{ needs.version.outputs.tag }}-macos-intel.dmg` | `…-x86_64-apple-darwin.tar.gz` |
             | Linux | `.deb` (Debian/Ubuntu) or `.AppImage` | `…-x86_64-unknown-linux-gnu.tar.gz` |
 
             Builds are not code-signed yet. Windows SmartScreen may show "More info → Run anyway". On macOS, right-click the app → Open the first time.

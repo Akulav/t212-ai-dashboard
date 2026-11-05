@@ -159,6 +159,58 @@ impl SettingsPage {
         ui.add_space(12.0);
 
         card(ui, |ui| {
+            use crate::insights::fundamentals::Provider;
+            widgets::section_title(ui, "AI Insights data");
+            ui.label(
+                RichText::new("Company fundamentals (P/E, cash flow, margins, quarterly results) for AI Insights and reports.")
+                    .size(12.5)
+                    .color(MUTED),
+            );
+            ui.add_space(6.0);
+            let is_sec = matches!(settings.fundamentals_provider, Provider::SecEdgar { .. });
+            ui.horizontal(|ui| {
+                if ui.radio(!is_sec, "None (portfolio data only)").clicked() && is_sec {
+                    settings.fundamentals_provider = Provider::None;
+                    changed = true;
+                }
+                if ui
+                    .radio(is_sec, "SEC EDGAR — US-listed companies, free")
+                    .clicked()
+                    && !is_sec
+                {
+                    settings.fundamentals_provider = Provider::SecEdgar {
+                        contact_email: String::new(),
+                    };
+                    changed = true;
+                }
+            });
+            if let Provider::SecEdgar { contact_email } = &mut settings.fundamentals_provider {
+                ui.horizontal(|ui| {
+                    ui.label("Contact email");
+                    changed |= ui
+                        .add(
+                            egui::TextEdit::singleline(contact_email)
+                                .hint_text("you@example.com")
+                                .desired_width(300.0),
+                        )
+                        .changed();
+                    if !contact_email.contains('@') {
+                        chip(ui, "required", WARNING);
+                    }
+                });
+                ui.label(
+                    RichText::new(
+                        "SEC's fair-access policy requires a contact email in each request. It is sent only to sec.gov. \
+                         UK/EU listings and ETFs aren't covered by SEC and will show “No data”.",
+                    )
+                    .size(11.5)
+                    .color(MUTED),
+                );
+            }
+        });
+        ui.add_space(12.0);
+
+        card(ui, |ui| {
             widgets::section_title(ui, "Application");
             changed |= ui
                 .checkbox(
