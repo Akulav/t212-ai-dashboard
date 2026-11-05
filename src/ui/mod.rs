@@ -216,13 +216,15 @@ pub fn portfolio_header(
 }
 
 impl AuraApp {
-    /// Builds the app, applies the theme and kicks off the update check.
+    /// Builds the app, applies the theme and starts the update checks (a minute after start, then every 6 hours;
+    /// never for a program built on this computer — `built_here`).
     pub fn new(
         cc: &eframe::CreationContext<'_>,
         rt: Handle,
         paths: AppPaths,
         http: Client,
         llm: LlmManager,
+        built_here: bool,
     ) -> Self {
         theme::apply(&cc.egui_ctx);
         let settings = Settings::load(&paths.config_file);
@@ -261,14 +263,18 @@ impl AuraApp {
             insights_page: insights::InsightsPage::default(),
             settings,
             telemetry,
-            update: Arc::new(Mutex::new(UpdateState::Idle)),
+            update: Arc::new(Mutex::new(if built_here {
+                UpdateState::SelfBuilt
+            } else {
+                UpdateState::Idle
+            })),
             page: Page::from_env(),
             shown_page: None,
             logo,
             settings_page,
         };
-        if app.settings.auto_check_updates {
-            app.check_for_updates();
+        if !built_here {
+            app.schedule_update_checks();
         }
         if app.settings.auto_load_model
             && let Some(spec) = app
@@ -283,32 +289,50 @@ impl AuraApp {
         app
     }
 
-    fn check_for_updates(&self) {
-        let state = self.update.clone();
-        let http = self.services.http.clone();
-        *state.lock() = UpdateState::Checking;
+    /// Background checks: a minute after start, then every 6 hours (when enabled in Settings).
+    fn schedule_update_checks(&self) {
+        let (state, http, auto) = (
+            self.update.clone(),
+            self.services.http.clone(),
+            self.settings.auto_check_updates,
+        );
+        let token = updater::github_token(&self.services.paths.root);
         self.services.rt.spawn(async move {
-            let next = match updater::check_latest(&http).await {
-                Ok(Some(info)) => UpdateState::Available(info),
-                Ok(None) => UpdateState::UpToDate,
-                Err(e) => {
-                    tracing::info!("update check failed: {e:#}");
-                    UpdateState::Failed(format!("{e:#}"))
+            if !auto {
+                return;
+            }
+            tokio::time::sleep(updater::FIRST_CHECK).await;
+            loop {
+                // (never interrupt a download or a pending restart)
+                if matches!(
+                    *state.lock(),
+                    UpdateState::Idle | UpdateState::UpToDate | UpdateState::Failed(_)
+                ) {
+                    run_check(&state, &http, token.as_deref()).await;
                 }
-            };
-            *state.lock() = next;
+                tokio::time::sleep(updater::CHECK_EVERY).await;
+            }
         });
+    }
+
+    /// "Check for updates" in the sidebar.
+    fn check_for_updates(&self) {
+        let (state, http) = (self.update.clone(), self.services.http.clone());
+        let token = updater::github_token(&self.services.paths.root);
+        self.services
+            .rt
+            .spawn(async move { run_check(&state, &http, token.as_deref()).await });
     }
 
     fn start_update(&self, info: updater::UpdateInfo) {
         let state = self.update.clone();
         let http = self.services.http.clone();
-        let paths = self.services.paths.clone();
+        let token = updater::github_token(&self.services.paths.root);
         *state.lock() = UpdateState::Downloading(info.clone(), Default::default());
         self.services.rt.spawn(async move {
             let progress_state = state.clone();
             let progress_info = info.clone();
-            let result = updater::install(&http, &paths, &info, move |p| {
+            let result = updater::install(&http, &info, token.as_deref(), move |p| {
                 *progress_state.lock() = UpdateState::Downloading(progress_info.clone(), p);
             })
             .await;
@@ -379,12 +403,33 @@ impl AuraApp {
                         .color(MUTED),
                 );
             }
+            UpdateState::SelfBuilt => {
+                ui.label(
+                    RichText::new(format!("v{} · built locally", crate::VERSION))
+                        .size(12.0)
+                        .color(MUTED),
+                )
+                .on_hover_text("Built on this computer: it never updates or installs itself.");
+            }
             UpdateState::UpToDate | UpdateState::Idle | UpdateState::Failed(_) => {
+                let hint = match &state {
+                    UpdateState::UpToDate => "You have the latest version.".to_string(),
+                    UpdateState::Failed(e) => format!("Last check failed: {e}"),
+                    _ => "Check GitHub for a newer release".to_string(),
+                };
                 ui.label(
                     RichText::new(format!("v{}", crate::VERSION))
                         .size(12.0)
                         .color(MUTED),
                 );
+                if ui
+                    .small_button(format!("{}  Check for updates", ph::ARROWS_CLOCKWISE))
+                    .on_hover_text(hint)
+                    .clicked()
+                {
+                    *self.update.lock() = UpdateState::Checking;
+                    self.check_for_updates();
+                }
             }
         }
     }
@@ -647,4 +692,18 @@ impl eframe::App for AuraApp {
         self.services.llm.shutdown();
         self.save_settings();
     }
+}
+
+/// One update check: updates the shared state.
+async fn run_check(state: &Mutex<UpdateState>, http: &Client, token: Option<&str>) {
+    *state.lock() = UpdateState::Checking;
+    let next = match updater::check_latest(http, token).await {
+        Ok(Some(info)) => UpdateState::Available(info),
+        Ok(None) => UpdateState::UpToDate,
+        Err(e) => {
+            tracing::info!("update check failed: {e:#}");
+            UpdateState::Failed(format!("{e:#}"))
+        }
+    };
+    *state.lock() = next;
 }

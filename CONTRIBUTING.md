@@ -120,18 +120,20 @@ flag in `HardwareProfile` if needed, and extend the `select_assets` tests with t
 
 ## Icons & installers
 
-- **Icons** are generated from the same code that draws the in-app logo (`ui::theme::app_icon`). After changing the logo, run `cargo run --example gen_icons` to regenerate `assets/icons/` (`.ico`, `.icns`, PNGs) and commit them. On Windows, `build.rs` embeds `icon.ico` and version info into the `.exe`.
-- **Installers** use [cargo-packager](https://github.com/crabnebula-dev/cargo-packager), configured under `[package.metadata.packager]` in `Cargo.toml`:
+- **Icons** have one master, `assets/icon.svg`. `python tools_dev/make_icons.py` (Pillow only) draws `icon.ico`,
+  `icon.icns`, `icon-<size>.png` and the setup wizard's `wizard-*.bmp` from it; commit the outputs. `build.rs` embeds
+  `icon.ico` and the version info in the Windows program; the window and in-app logo decode `icon-256.png`.
+- **Windows setup**: `installer/aura-portfolio.iss` (Inno Setup 6). Build it after `cargo build --release`:
 
-  ```bash
-  cargo install cargo-packager --locked --version 0.11.8
-  cargo build --release
-  cargo packager --release --formats nsis   # Windows → target/packages/*-setup.exe
+  ```powershell
+  & "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" /DAppVersion=1.0.0 /DExe=$PWD\target\release\aura-portfolio.exe /Odist installer\aura-portfolio.iss
   ```
 
-  macOS uses `--formats app,dmg` and Linux uses `--formats deb,appimage`. CI builds all of them on each release.
-- **Local-AI check:** `cargo run --example llm_check` prints the detected CPU/GPU/VRAM and the model fit, runs the real llama.cpp installer into a temp folder, and lists the devices `llama-server` can use. If the GitHub API is rate-limited (60 requests/h without auth), the installer falls back to direct downloads.
-- **Trading212 diagnostics:** `cargo run --example t212_diagnose` checks each endpoint with your stored key (read-only, and it never prints secrets). `-- sync` runs the full sync into a throwaway folder.
+  **Never change its AppId.** CI compiles the script against a debug build on every push.
+- **macOS app**: `installer/Info.plist` (release.yml fills in `@VERSION@`, signs ad hoc, packs the `.dmg`).
+- **Self-install / uninstall / updates**: `src/install.rs`, `src/updater.rs` (see CLAUDE.md for how they fit).
+- **Trading212 diagnostics:** `cargo run --example t212_diagnose` (read-only, never prints secrets; `-- sync` runs the
+  full sync into a throwaway folder). **Local-AI check:** `cargo run --example llm_check`.
 
 ## Demo mode & screenshots
 
@@ -141,10 +143,10 @@ flag in `HardwareProfile` if needed, and extend the `select_assets` tests with t
 
 ## Releasing
 
-1. Bump `version` in `Cargo.toml` (and run `cargo check` so `Cargo.lock` updates).
-2. Push to `main`. Once **CI passes** on that commit, `release.yml` sees that tag `vX.Y.Z` doesn't exist, builds 4 targets, and publishes the release with checksums.
-3. Running clients see the **Update available** button on their next launch.
-
-If a release build fails, fix it and push again: the release is retried after the next green CI run, as long as the tag still doesn't exist. To build without waiting, use *Actions → Release → Run workflow*.
-
-> Code behind `#[cfg(target_os = …)]` only compiles on that OS, so only the matching CI runner checks it. Cross `cargo check` from Windows doesn't work here (`ring` needs a C cross-compiler), so keep platform-specific code small and let CI verify it.
+1. `python tools_dev/bump_version.py X.Y.Z` — sets `VERSION`, `Cargo.toml`, `Cargo.lock` and opens a CHANGELOG section.
+   Pick the number from the newest tag (`git tag --sort=-v:refname`): patch = fixes, minor = features, major = breaking
+   data/config/install-layout changes.
+2. Fill in the CHANGELOG section (it becomes the release notes), run the checks with `--locked`, commit.
+3. Push to `main`. `release.yml` sees `VERSION` change, runs the tests, builds Windows / Linux / macOS (arm64), the
+   setup and the `.dmg`, writes `SHA256SUMS.txt`, tags `vX.Y.Z` and publishes. A version that's already tagged is
+   skipped. Installed copies offer the update within 6 hours.

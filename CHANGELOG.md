@@ -3,6 +3,10 @@
 All notable changes to Aura Portfolio. Format: [Keep a Changelog](https://keepachangelog.com),
 versions follow [SemVer](https://semver.org).
 
+## [1.0.0] - 2026-11-06
+
+- 
+
 ## [0.3.0] — 2026-11-05
 
 ### Added

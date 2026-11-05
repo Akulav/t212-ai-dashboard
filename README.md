@@ -4,7 +4,7 @@
 
 <br/>
 
-<img src="assets/logo.svg" alt="Aura logo" width="96"/>
+<img src="assets/icon.svg" alt="Aura logo" width="96"/>
 
 # Aura Portfolio
 
@@ -13,17 +13,15 @@
 A native, 100% Rust desktop dashboard with deep portfolio analytics, live market context,
 and a zero-config local LLM analyst powered by `llama.cpp`.
 
-[![Build](https://img.shields.io/github/actions/workflow/status/akulav/t212-ai-dashboard/release.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=release)](https://github.com/akulav/t212-ai-dashboard/actions/workflows/release.yml)
-[![CI](https://img.shields.io/github/actions/workflow/status/akulav/t212-ai-dashboard/ci.yml?style=for-the-badge&logo=rust&logoColor=white&label=ci)](https://github.com/akulav/t212-ai-dashboard/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/github/v/release/akulav/t212-ai-dashboard?style=for-the-badge&color=2DD4BF)](https://github.com/akulav/t212-ai-dashboard/releases/latest)
-[![License](https://img.shields.io/github/license/akulav/t212-ai-dashboard?style=for-the-badge&color=8B5CF6)](LICENSE)
+![License: MIT](https://img.shields.io/badge/license-MIT-8B5CF6?style=for-the-badge)
+![Installers](https://img.shields.io/badge/install-Setup.exe%20%C2%B7%20.dmg%20%C2%B7%20Linux-2DD4BF?style=for-the-badge)
 <br/>
 ![Windows](https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)
 ![macOS](https://img.shields.io/badge/macOS-000000?style=for-the-badge&logo=apple&logoColor=white)
 ![Linux](https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black)
 ![Rust](https://img.shields.io/badge/100%25-Rust-B7410E?style=for-the-badge&logo=rust&logoColor=white)
 
-[**Download**](https://github.com/akulav/t212-ai-dashboard/releases/latest) ·
+[**Download**](https://github.com/Akulav/t212-ai-dashboard/releases/latest) ·
 [Features](#-features) ·
 [Quick start](#-quick-start) ·
 [Architecture](#-architecture) ·
@@ -116,20 +114,16 @@ Regenerate with <code>scripts/screenshots.ps1</code>.</sub>
 ## 🚀 Quick start
 
 ### 1. Install
-Download the installer for your platform from the [**latest release**](https://github.com/Akulav/t212-ai-dashboard/releases/latest):
+Download from the [**latest release**](https://github.com/Akulav/t212-ai-dashboard/releases/latest):
 
-| Platform | Installer (recommended) | Portable alternative |
+| System | Download | First run |
 |---|---|---|
-| Windows 10/11 | `aura-portfolio-vX.Y.Z-windows-x64-setup.exe` | `…-x86_64-pc-windows-msvc.zip` |
-| macOS Apple Silicon | `aura-portfolio-vX.Y.Z-macos-apple-silicon.dmg` | `…-aarch64-apple-darwin.tar.gz` |
-| Linux | `…-linux-x64.deb` or `…-linux-x64.AppImage` | `…-x86_64-unknown-linux-gnu.tar.gz` |
+| **Windows 10/11 (x64)** | `Aura-Portfolio-Setup.exe` | SmartScreen: *More info → Run anyway* (the setup isn't code-signed). The wizard installs for your user only - no admin prompt. |
+| **macOS (Apple Silicon)** | `Aura-Portfolio-macos-arm64.dmg` | Drag *Aura Portfolio* to Applications, then **right-click → Open** the first time (Gatekeeper: unidentified developer). |
+| **Linux (x64)** | `aura-portfolio-linux-x64` | `chmod +x aura-portfolio-linux-x64 && ./aura-portfolio-linux-x64` - it installs itself and adds an app-menu entry. |
 
-- **Windows:** run the setup. It installs for your user only (no admin prompt), adds Start Menu and Desktop shortcuts, and registers an uninstaller in *Apps & features*.
-- **macOS:** open the `.dmg` and drag *Aura Portfolio* to Applications.
-- **Linux:** `sudo apt install ./aura-portfolio-…-linux-x64.deb`, or `chmod +x` the AppImage and run it.
-
-> [!NOTE]
-> Builds aren't code-signed yet. On Windows, SmartScreen may ask you to click *More info → Run anyway*. On macOS, right-click the app and choose *Open* the first time.
+The bare programs (`aura-portfolio-windows-x64.exe`, `aura-portfolio-macos-arm64`, `aura-portfolio-linux-x64`) work
+anywhere too: started from Downloads, each one installs itself (see below). Every file is listed in `SHA256SUMS.txt`.
 
 ### 2. Connect Trading212
 In *Trading212 → Settings → API*, create a key with these permissions:
@@ -156,19 +150,62 @@ That's it: no Python, no Docker, no Ollama.
 > No API key needed, and nothing is sent anywhere.
 
 > [!TIP]
-> **Where's my data?** Installed builds keep runtime, models, logs and settings in your user
-> profile (e.g. `%LOCALAPPDATA%\akulav\AuraPortfolio`), so updates and uninstalls never touch it.
-> The portable archives ship a `portable` marker file, which keeps everything in `aura-data/`
-> next to the executable; delete that folder to remove all traces. Override either with `AURA_DATA_DIR`.
+> **Where's my data?** In the app folder's `data` folder, next to the program (see
+> [Installing, updating and uninstalling](#-installing-updating-and-uninstalling)). Your Trading212 key is not there:
+> it's in the OS keychain. `AURA_DATA_DIR` points the data folder anywhere else.
 
 ### Build from source
 
 ```bash
-git clone https://github.com/akulav/t212-ai-dashboard && cd t212-ai-dashboard
+git clone https://github.com/Akulav/t212-ai-dashboard && cd t212-ai-dashboard
 cargo run --release
 ```
 
 Linux needs: `pkg-config libdbus-1-dev libxkbcommon-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libwayland-dev libgl1-mesa-dev`.
+
+## 📦 Installing, updating and uninstalling
+
+### The app folder
+Aura lives in one folder per user. The program, and everything it keeps in `data/` (settings, the portfolio cache,
+insights, AI models, the llama.cpp runtime, logs), stay together there:
+
+| System | App folder | Shortcuts |
+|---|---|---|
+| Windows | `%LOCALAPPDATA%\Aura Portfolio` (the setup lets you pick another) | Start menu + desktop, *Settings → Apps* entry |
+| macOS | `~/Library/Application Support/Aura Portfolio` | the app in Applications (or `~/Applications`) + desktop |
+| Linux | `$XDG_DATA_HOME/aura-portfolio` or `~/.local/share/aura-portfolio` | app-menu entry + desktop launcher |
+
+**Self-install.** Start the program from anywhere else (Downloads, the desktop, the Mac app) and it copies itself into
+the app folder, adds the shortcuts and the Apps entry, starts from there and closes the copy you started. An existing
+install is never downgraded: an older download only opens the installed (newer) one. It runs where it is instead with
+`--here`, `--dir <folder>`, `AURA_DATA_DIR`, a folder that already holds an install (including a setup install in a
+custom folder), on Linux without a desktop session, and when you built it yourself (`cargo`).
+
+**From 0.x:** data from the old per-user folder (`…\akulav\AuraPortfolio`) is moved into the app folder on the first
+start; the 0.2 setup's Apps entry is replaced by the new one.
+
+### Updates
+Aura checks GitHub a minute after start and every 6 hours (turn it off in *Settings*, or use **Check for updates** in
+the sidebar). An update downloads this system's program, checks it against the release's `SHA256SUMS.txt`, swaps it in
+(the old one is kept as `.old` until the next start) and restarts. **It replaces only the program** - your data, models,
+settings and keychain entry are never touched. A program you built yourself never updates itself.
+
+### Uninstalling
+- **Windows:** *Settings → Apps → Aura Portfolio → Uninstall* (or *Start menu → Uninstall Aura Portfolio*). It stops a
+  running Aura, removes the program and shortcuts, then asks whether to delete the folder with your data (default: No).
+- **macOS / Linux / a self-installed Windows copy:** run `aura-portfolio --uninstall` from the app folder. It removes the
+  shortcuts and the app-list entry, then asks before deleting the folder. On a Mac also drag the app out of Applications.
+- Your Trading212 key stays in the keychain: remove it in *Settings → Remove* before uninstalling if you want it gone.
+
+## 🩺 Troubleshooting
+
+- **"GitHub shows no release" / update check failed.** No release is published yet, or GitHub is unreachable. For a
+  private fork, give Aura a read-only token: put `github_token = <token>` in `data/local.config` (never commit it).
+- **macOS: "can't be opened" or "is damaged".** The app isn't notarised. Right-click it → *Open* → *Open*. If macOS
+  still says it's damaged, clear the download's quarantine flag:
+  `xattr -dr com.apple.quarantine "/Applications/Aura Portfolio.app"`.
+- **Windows: "Windows protected your PC".** SmartScreen doesn't know unsigned apps: *More info → Run anyway*.
+- **Aura is already open.** One Aura runs per app folder; starting it again brings the open window to the front.
 
 ## 🏗 Architecture
 
@@ -239,38 +276,29 @@ Closing Aura **always** frees the model's memory:
 
 ```text
 t212-ai-dashboard/
+├── VERSION               # the version (single source of truth: tools_dev/bump_version.py)
+├── CHANGELOG.md          # one section per release - the release notes
 ├── .github/workflows/
-│   ├── ci.yml            # fmt · clippy -D warnings · tests · rustdoc on 3 OSes
-│   └── release.yml       # after green CI: new version → Windows/Linux/macOS-arm build → GitHub Release
-├── assets/               # logo.svg, banner.svg
+│   ├── ci.yml            # versions agree · fmt · clippy · tests · rustdoc (3 OSes) · the setup compiles
+│   └── release.yml       # VERSION changed → tests → build → Setup.exe / .dmg → GitHub Release
+├── assets/               # icon.svg (master) + generated icon.ico/.icns/PNGs and wizard pictures
+├── installer/            # aura-portfolio.iss (Inno Setup 6) · Info.plist (the Mac app)
+├── tools_dev/            # bump_version.py · make_icons.py
 ├── src/
-│   ├── main.rs           # entry point: runtime, panic hook, eframe
+│   ├── main.rs           # entry point: options, self-install, one instance per folder, the window
+│   ├── install.rs        # self-install, shortcuts, Apps entry, --uninstall
+│   ├── updater.rs        # updates from GitHub releases (bare program + SHA256SUMS.txt)
+│   ├── paths.rs          # the app folder's data folder (+ the move from 0.x)
 │   ├── lib.rs            # crate docs + module map (#![warn(missing_docs)])
-│   ├── paths.rs          # portable / OS data directories
-│   ├── config.rs         # settings (trading mode never persisted)
-│   ├── secrets.rs        # keyring-backed T212 credentials
-│   ├── net.rs            # HTTP client, resumable downloads, GitHub API
-│   ├── archive.rs        # safe zip / tar.gz extraction
-│   ├── telemetry.rs      # 1 Hz RAM/VRAM sampler
-│   ├── updater.rs        # self-update with checksum verification
-│   ├── t212/             # API client: auth, rate limits, pagination, write guard
-│   │   ├── mod.rs · endpoints.rs · models.rs · rate_limit.rs
-│   ├── portfolio/        # sync service, local cache, analytics (tax, projections)
-│   │   ├── mod.rs · store.rs · analytics.rs
-│   ├── llm/
-│   │   ├── mod.rs        # LlmManager: state machine + chat client
-│   │   ├── hardware.rs   # RAM / GPU / Vulkan detection
-│   │   ├── runtime.rs    # llama.cpp release picker + installer
-│   │   ├── models.rs     # GGUF catalog, fit assessment, recommendations
-│   │   └── server.rs     # llama-server process + OS lifetime binding
-│   ├── market/
-│   │   └── hours.rs      # NYSE bell countdown
-│   └── ui/
-│       ├── mod.rs        # app shell: top bar, nav, footer, router
-│       ├── theme.rs      # "Aurora" palette + procedural logo/icon
-│       ├── widgets.rs    # cards, KPIs, chips, sparklines, telemetry
-│       ├── dashboard.rs · ai.rs · settings.rs
-└── CONTRIBUTING.md       # extending AI features & T212 endpoints
+│   ├── config.rs · secrets.rs · net.rs · archive.rs · telemetry.rs
+│   ├── t212/             # Trading212 API client
+│   ├── portfolio/        # sync service, cache, analytics, demo data
+│   ├── insights/         # fundamentals (SEC EDGAR), scoring, local-LLM analysis
+│   ├── report/           # branded PDF report (Typst)
+│   ├── llm/              # llama.cpp runtime, models, server process, GPU detection
+│   ├── market/           # NYSE session clock
+│   └── ui/               # egui app: theme, widgets, one file per page
+└── CONTRIBUTING.md       # developer guide
 ```
 
 ## 🔐 Security

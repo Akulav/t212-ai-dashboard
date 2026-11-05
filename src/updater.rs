@@ -1,50 +1,63 @@
-//! Self-update from GitHub Releases.
+//! Updates of this program from the GitHub releases of [`GITHUB_REPO`]: checked a minute after start and every
+//! 6 hours (or when asked from the sidebar).
 //!
-//! 1. [`check_latest`] reads `releases/latest` of [`GITHUB_REPO`] and compares
-//!    its semver tag with [`crate::VERSION`].
-//! 2. The asset whose name contains this binary's target triple
-//!    ([`crate::TARGET`]) is selected — names are produced by
-//!    `.github/workflows/release.yml`.
-//! 3. [`install`] downloads it, **verifies the published `.sha256`**, extracts
-//!    the new executable and swaps it in place with `self-replace` (works even
-//!    while the old exe is running on Windows).
-//! 4. [`restart`] relaunches the new version.
+//! Updating downloads this platform's **bare program** (see [`asset_name`]) next to the running one as `<exe>.new`,
+//! checks it against the release's `SHA256SUMS.txt`, renames the running program to `<exe>.old` (a running program
+//! can't be overwritten on Windows, but it can be renamed), puts the new one in its place and starts it with
+//! `--after-update`; the next start removes the `.old`. Nothing is swapped when the download or its checksum fails.
+//! Data, models, the runtime and settings are never touched.
+//!
+//! A program built on this computer (anything under a `target/` folder) never updates itself.
+//! A private repository needs a read-only token: `github_token = <token>` in `data/local.config` (never committed).
+
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow, bail};
-use reqwest::Client;
-use semver::Version;
+use reqwest::{Client, header};
+use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
-use crate::net::{self, Progress};
-use crate::paths::AppPaths;
+use crate::net::Progress;
 
 /// Repository that publishes Aura releases.
-pub const GITHUB_REPO: &str = "akulav/t212-ai-dashboard";
+pub const GITHUB_REPO: &str = "Akulav/t212-ai-dashboard";
+/// First check after start.
+pub const FIRST_CHECK: Duration = Duration::from_secs(60);
+/// Then every …
+pub const CHECK_EVERY: Duration = Duration::from_secs(6 * 3600);
 
-const EXE_NAME: &str = if cfg!(windows) {
-    "aura-portfolio.exe"
-} else {
-    "aura-portfolio"
-};
+/// The release file for this computer (the bare program).
+pub fn asset_name() -> &'static str {
+    if cfg!(windows) {
+        "aura-portfolio-windows-x64.exe"
+    } else if cfg!(target_os = "macos") {
+        "aura-portfolio-macos-arm64"
+    } else {
+        "aura-portfolio-linux-x64"
+    }
+}
 
 /// A newer release that can be installed.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct UpdateInfo {
-    /// New version.
-    pub version: Version,
+    /// Version without the `v`.
+    pub version: String,
     /// Release web page.
     pub html_url: String,
     /// Release notes (Markdown).
     pub notes: String,
-    /// Archive file name.
-    pub asset_name: String,
-    /// Archive download URL.
+    /// Public download URL of this platform's program.
     pub asset_url: String,
-    /// Checksum file URL, if published.
-    pub checksum_url: Option<String>,
+    /// Public download URL of `SHA256SUMS.txt`.
+    pub sums_url: String,
+    /// The same two files through GitHub's API (used with a token).
+    pub asset_api: String,
+    /// `SHA256SUMS.txt` through the API.
+    pub sums_api: String,
 }
 
-/// Updater state machine rendered by the top bar.
+/// Updater state machine rendered by the sidebar.
 #[derive(Debug, Clone, Default)]
 pub enum UpdateState {
     /// Nothing happened yet.
@@ -59,107 +72,361 @@ pub enum UpdateState {
     /// Downloading the update.
     Downloading(UpdateInfo, Progress),
     /// Installed; restart to apply.
-    ReadyToRestart(Version),
+    ReadyToRestart(String),
     /// Something went wrong.
     Failed(String),
+    /// Built on this computer: never updates itself.
+    SelfBuilt,
 }
 
-/// Returns `Some` if GitHub has a newer release with an asset for this platform.
-pub async fn check_latest(http: &Client) -> Result<Option<UpdateInfo>> {
-    let release = net::latest_release(http, GITHUB_REPO).await?;
-    let latest = Version::parse(release.tag_name.trim_start_matches('v'))
-        .with_context(|| format!("release tag {:?} is not semver", release.tag_name))?;
-    let current = Version::parse(crate::VERSION)?;
-    if latest <= current {
+/// "v2.10.1" → [2, 10, 1] (a pre-release suffix is ignored for the numbers).
+fn numbers(v: &str) -> Vec<u64> {
+    v.trim()
+        .trim_start_matches('v')
+        .split(['-', '+'])
+        .next()
+        .unwrap_or("")
+        .split('.')
+        .map(|x| x.parse().unwrap_or(0))
+        .collect()
+}
+
+/// Is `latest` newer than `current`?
+pub fn newer(latest: &str, current: &str) -> bool {
+    let (a, b) = (numbers(latest), numbers(current));
+    for i in 0..a.len().max(b.len()) {
+        let (x, y) = (
+            a.get(i).copied().unwrap_or(0),
+            b.get(i).copied().unwrap_or(0),
+        );
+        if x != y {
+            return x > y;
+        }
+    }
+    false
+}
+
+#[derive(Deserialize)]
+struct Release {
+    tag_name: String,
+    #[serde(default)]
+    html_url: String,
+    #[serde(default)]
+    body: Option<String>,
+    #[serde(default)]
+    assets: Vec<Asset>,
+}
+
+#[derive(Deserialize)]
+struct Asset {
+    name: String,
+    browser_download_url: String,
+    url: String,
+}
+
+/// Parses GitHub's "latest release" JSON into this platform's update.
+pub fn parse_release(json: &str) -> Result<UpdateInfo> {
+    let r: Release = serde_json::from_str(json).context("GitHub's answer")?;
+    let find = |name: &str| r.assets.iter().find(|a| a.name == name);
+    let (asset, sums) = (find(asset_name()), find("SHA256SUMS.txt"));
+    Ok(UpdateInfo {
+        version: r.tag_name.trim_start_matches('v').to_string(),
+        html_url: r.html_url,
+        notes: r.body.unwrap_or_default().chars().take(4000).collect(),
+        asset_url: asset
+            .map(|a| a.browser_download_url.clone())
+            .unwrap_or_default(),
+        sums_url: sums
+            .map(|a| a.browser_download_url.clone())
+            .unwrap_or_default(),
+        asset_api: asset.map(|a| a.url.clone()).unwrap_or_default(),
+        sums_api: sums.map(|a| a.url.clone()).unwrap_or_default(),
+    })
+}
+
+/// This program's checksum in `SHA256SUMS.txt` (`<hex>  <name>` lines, as `sha256sum` writes them).
+pub fn checksum_for(sums: &str, name: &str) -> Option<String> {
+    sums.lines().find_map(|l| {
+        let mut parts = l.split_whitespace();
+        let (hash, file) = (parts.next()?, parts.next()?);
+        (file.trim_start_matches('*') == name && hash.len() == 64).then(|| hash.to_lowercase())
+    })
+}
+
+/// A read-only GitHub token for a private repository: `github_token = …` in `data/local.config`.
+pub fn github_token(data_dir: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(data_dir.join("local.config")).ok()?;
+    text.lines().find_map(|l| {
+        let (k, v) = l.split_once('=')?;
+        (k.trim() == "github_token")
+            .then(|| v.trim().trim_matches('"').to_string())
+            .filter(|t| !t.is_empty())
+    })
+}
+
+async fn get(
+    http: &Client,
+    url: &str,
+    token: Option<&str>,
+    accept: &str,
+) -> Result<reqwest::Response> {
+    let mut req = http.get(url).header(header::ACCEPT, accept);
+    if let Some(t) = token {
+        req = req.bearer_auth(t);
+    }
+    let resp = req
+        .send()
+        .await
+        .with_context(|| format!("couldn't reach GitHub ({url})"))?;
+    match resp.status().as_u16() {
+        404 if token.is_none() => bail!(
+            "GitHub shows no release of {GITHUB_REPO} (no release yet, or a private repository: put a read-only \
+             token in data/local.config as github_token = …)"
+        ),
+        404 => bail!(
+            "GitHub shows no release of {GITHUB_REPO} (no release yet, or the token can't read it)"
+        ),
+        401 | 403 => bail!(
+            "GitHub refused ({}): check the token in data/local.config, or try again later",
+            resp.status()
+        ),
+        _ => Ok(resp.error_for_status()?),
+    }
+}
+
+/// A release file: through the API with a token (private repository), else its public download address.
+async fn fetch(
+    http: &Client,
+    public: &str,
+    api: &str,
+    token: Option<&str>,
+) -> Result<reqwest::Response> {
+    match token {
+        Some(_) if !api.is_empty() => get(http, api, token, "application/octet-stream").await,
+        _ => get(http, public, None, "application/octet-stream").await,
+    }
+}
+
+/// Asks GitHub for the latest release; `Some` if it is newer than this program and has this platform's file.
+pub async fn check_latest(http: &Client, token: Option<&str>) -> Result<Option<UpdateInfo>> {
+    let url = format!("https://api.github.com/repos/{GITHUB_REPO}/releases/latest");
+    let body = get(http, &url, token, "application/vnd.github+json")
+        .await?
+        .text()
+        .await?;
+    let info = parse_release(&body)?;
+    if !newer(&info.version, crate::VERSION) {
         return Ok(None);
     }
-    let asset = release
-        .assets
-        .iter()
-        .find(|a| a.name.contains(crate::TARGET) && !a.name.ends_with(".sha256"))
-        .ok_or_else(|| anyhow!("release {latest} has no build for {}", crate::TARGET))?;
-    let checksum_url = release
-        .assets
-        .iter()
-        .find(|a| a.name == format!("{}.sha256", asset.name))
-        .map(|a| a.browser_download_url.clone());
-    Ok(Some(UpdateInfo {
-        version: latest,
-        html_url: release.html_url,
-        notes: release.body.unwrap_or_default(),
-        asset_name: asset.name.clone(),
-        asset_url: asset.browser_download_url.clone(),
-        checksum_url,
-    }))
+    if info.asset_url.is_empty() || info.sums_url.is_empty() {
+        bail!(
+            "release {} has no {} with a checksum yet",
+            info.version,
+            asset_name()
+        );
+    }
+    Ok(Some(info))
 }
 
-/// Downloads, verifies and swaps in the new executable.
-pub async fn install(
-    http: &Client,
-    paths: &AppPaths,
-    info: &UpdateInfo,
-    on_progress: impl FnMut(Progress),
-) -> Result<()> {
-    let archive = paths.downloads.join(&info.asset_name);
-    let _ = tokio::fs::remove_file(&archive).await;
-    net::download_to_file(http, &info.asset_url, &archive, on_progress).await?;
+/// A program built on this computer (`cargo build`: under a `target` folder) never updates or installs itself.
+pub fn self_built(exe: &Path) -> bool {
+    exe.components().any(|c| c.as_os_str() == "target")
+}
 
-    match &info.checksum_url {
-        Some(url) => {
-            let expected = http
-                .get(url)
-                .send()
-                .await?
-                .error_for_status()?
-                .text()
-                .await?;
-            let expected = expected
-                .split_whitespace()
-                .next()
-                .unwrap_or_default()
-                .to_lowercase();
-            let path = archive.clone();
-            let actual = tokio::task::spawn_blocking(move || -> Result<String> {
-                let mut hasher = Sha256::new();
-                std::io::copy(&mut std::fs::File::open(path)?, &mut hasher)?;
-                Ok(format!("{:x}", hasher.finalize()))
-            })
-            .await??;
-            if actual != expected {
-                let _ = tokio::fs::remove_file(&archive).await;
-                bail!(
-                    "checksum mismatch for {} (expected {expected}, got {actual})",
-                    info.asset_name
-                );
-            }
-        }
-        None => tracing::warn!("release has no checksum file; skipping verification"),
+/// `aura-portfolio.exe` → `aura-portfolio.exe.new` / `.old`.
+pub fn sibling(exe: &Path, ext: &str) -> PathBuf {
+    let mut s = exe.as_os_str().to_owned();
+    s.push(format!(".{ext}"));
+    PathBuf::from(s)
+}
+
+/// Puts `new` in `exe`'s place; the running program is kept as `.old` until the next start removes it.
+pub fn swap(exe: &Path, new: &Path) -> Result<()> {
+    let old = sibling(exe, "old");
+    let _ = std::fs::remove_file(&old);
+    std::fs::rename(exe, &old).context("couldn't move the running program aside")?;
+    if let Err(e) = std::fs::rename(new, exe) {
+        let _ = std::fs::rename(&old, exe); // (put it back: nothing changed)
+        return Err(anyhow!("couldn't put the new program in place: {e}"));
     }
-
-    let staging = paths.downloads.join(format!("update-{}", info.version));
-    tokio::task::spawn_blocking(move || -> Result<()> {
-        if staging.exists() {
-            std::fs::remove_dir_all(&staging)?;
-        }
-        crate::archive::extract(&archive, &staging)?;
-        let new_exe = crate::archive::find_file(&staging, EXE_NAME)
-            .ok_or_else(|| anyhow!("{EXE_NAME} not found in update archive"))?;
-        self_replace::self_replace(&new_exe).context("replacing the running executable")?;
-        let _ = std::fs::remove_dir_all(&staging);
-        let _ = std::fs::remove_file(&archive);
-        Ok(())
-    })
-    .await??;
     Ok(())
 }
 
-/// Launches the (now replaced) executable and exits this process.
+/// (At start.) Removes what the last update left: the previous program (`.old`) and an unfinished download (`.new`).
+pub fn clean_up(exe: &Path) {
+    for ext in ["old", "new"] {
+        let p = sibling(exe, ext);
+        if p.exists() {
+            for _ in 0..20 {
+                if std::fs::remove_file(&p).is_ok() {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(250)); // (the old one may still be ending)
+            }
+        }
+    }
+}
+
+/// Downloads, verifies and swaps in the new program. Afterwards [`restart`] starts it.
+pub async fn install(
+    http: &Client,
+    info: &UpdateInfo,
+    token: Option<&str>,
+    mut on_progress: impl FnMut(Progress),
+) -> Result<()> {
+    let exe = std::env::current_exe().context("where is this program?")?;
+    if self_built(&exe) {
+        bail!("this program was built on this computer (cargo): update it from the source instead");
+    }
+    let sums = fetch(http, &info.sums_url, &info.sums_api, token)
+        .await?
+        .text()
+        .await
+        .context("the checksums")?;
+    let want = checksum_for(&sums, asset_name())
+        .ok_or_else(|| anyhow!("the release has no checksum for {}", asset_name()))?;
+
+    let mut resp = fetch(http, &info.asset_url, &info.asset_api, token)
+        .await
+        .context("download failed")?;
+    let total = resp.content_length();
+    let mut data = Vec::with_capacity(total.unwrap_or(1 << 24) as usize);
+    while let Some(chunk) = resp.chunk().await.context("download interrupted")? {
+        data.extend_from_slice(&chunk);
+        on_progress(Progress {
+            downloaded: data.len() as u64,
+            total,
+        });
+    }
+    if total.is_some_and(|t| t != data.len() as u64) {
+        bail!("download cut short");
+    }
+    let got = format!("{:x}", Sha256::digest(&data));
+    if got != want {
+        bail!("the download doesn't match the release's checksum: not installed");
+    }
+    let new = sibling(&exe, "new");
+    std::fs::write(&new, &data).context("couldn't save the new program")?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&new, std::fs::Permissions::from_mode(0o755));
+    }
+    swap(&exe, &new)?;
+    tracing::info!(
+        "updated the program from {} to {}",
+        crate::VERSION,
+        info.version
+    );
+    Ok(())
+}
+
+/// Starts the (new) program with `--after-update` — it waits for this one to release the data folder — and exits.
 ///
 /// Call [`LlmManager::shutdown`](crate::llm::LlmManager::shutdown) first.
 pub fn restart() -> Result<()> {
     let exe = std::env::current_exe()?;
-    std::process::Command::new(exe)
-        .spawn()
-        .context("relaunching")?;
+    let mut cmd = std::process::Command::new(exe);
+    cmd.arg("--after-update");
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0000_0008 | 0x0000_0200); // DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+    }
+    cmd.spawn().context("couldn't start the new program")?;
     std::process::exit(0);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn versions_compare_by_number() {
+        assert!(newer("1.10.0", "1.9.9"));
+        assert!(newer("v1.3.1", "1.3.0"));
+        assert!(!newer("1.3.0", "1.3.0"));
+        assert!(!newer("1.2.9", "1.3.0"));
+        assert!(newer("2", "1.99.99"));
+        assert!(!newer("1.3.0-beta", "1.3.0"));
+    }
+
+    #[test]
+    fn release_json_gives_this_computers_program() {
+        let json = format!(
+            r#"{{"tag_name": "v1.4.0", "html_url": "https://github.com/x/y/releases/tag/v1.4.0", "body": "- things",
+              "assets": [
+                {{"name": "SHA256SUMS.txt", "browser_download_url": "https://dl/sums", "url": "https://api/sums"}},
+                {{"name": "{}", "browser_download_url": "https://dl/prog", "url": "https://api/prog"}},
+                {{"name": "Aura-Portfolio-Setup.exe", "browser_download_url": "https://dl/setup", "url": "https://api/setup"}}]}}"#,
+            asset_name()
+        );
+        let r = parse_release(&json).unwrap();
+        assert_eq!(r.version, "1.4.0");
+        assert_eq!(
+            (r.asset_url.as_str(), r.asset_api.as_str()),
+            ("https://dl/prog", "https://api/prog")
+        );
+        assert_eq!(r.sums_url, "https://dl/sums");
+        assert!(r.notes.contains("things"));
+        assert!(parse_release("{}").is_err());
+    }
+
+    #[test]
+    fn checksum_lines_are_read_like_sha256sum_writes_them() {
+        let h = "a".repeat(64);
+        let sums = format!("{h}  {}\n{}  other\n", asset_name(), "b".repeat(64));
+        assert_eq!(checksum_for(&sums, asset_name()), Some(h.clone()));
+        assert_eq!(
+            checksum_for(&format!("{h} *{}", asset_name()), asset_name()),
+            Some(h)
+        );
+        assert_eq!(checksum_for(&sums, "missing"), None);
+        assert_eq!(checksum_for("short  x", "x"), None);
+    }
+
+    #[test]
+    fn swap_puts_the_new_program_in_place_and_keeps_the_old() {
+        let dir = std::env::temp_dir().join(format!("aura-swap-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let exe = dir.join("prog.exe");
+        std::fs::write(&exe, b"old").unwrap();
+        let new = sibling(&exe, "new");
+        std::fs::write(&new, b"new").unwrap();
+        swap(&exe, &new).unwrap();
+        assert_eq!(std::fs::read(&exe).unwrap(), b"new");
+        assert_eq!(std::fs::read(sibling(&exe, "old")).unwrap(), b"old");
+        clean_up(&exe);
+        assert!(!sibling(&exe, "old").exists());
+        assert!(
+            swap(&exe, &sibling(&exe, "new")).is_err(),
+            "a missing download changes nothing"
+        );
+        assert_eq!(std::fs::read(&exe).unwrap(), b"new");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_program_built_here_is_never_replaced() {
+        assert!(self_built(Path::new(
+            "D:/src/aura/target/release/aura-portfolio.exe"
+        )));
+        assert!(!self_built(Path::new(
+            "C:/Users/me/AppData/Local/Aura Portfolio/aura-portfolio.exe"
+        )));
+    }
+
+    #[test]
+    fn token_comes_from_local_config() {
+        let dir = std::env::temp_dir().join(format!("aura-token-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        assert_eq!(github_token(&dir), None);
+        std::fs::write(
+            dir.join("local.config"),
+            "# private repo\ngithub_token = \"ghp_x\"\n",
+        )
+        .unwrap();
+        assert_eq!(github_token(&dir).as_deref(), Some("ghp_x"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

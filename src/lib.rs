@@ -31,6 +31,7 @@
 pub mod archive;
 pub mod config;
 pub mod insights;
+pub mod install;
 pub mod llm;
 pub mod market;
 pub mod net;

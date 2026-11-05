@@ -1,48 +1,66 @@
 name: CI
 
 on:
-  pull_request:
   push:
     branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  check:
-    name: Check (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+  version:
+    name: Versions agree
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: VERSION, Cargo.toml and Cargo.lock carry the same number
+        run: |
+          v="$(tr -d ' \r\n' < VERSION)"
+          c="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)"
+          l="$(awk '/^name = "aura-portfolio"$/ {getline; gsub(/version = |"/, ""); print; exit}' Cargo.lock)"
+          echo "VERSION=$v  Cargo.toml=$c  Cargo.lock=$l"
+          test "$v" = "$c" && test "$v" = "$l"
+      - name: The dev tools parse (tools_dev/*.py)
+        run: python3 -m py_compile tools_dev/*.py
+
+  program:
+    name: Lint and tests (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, windows-latest, macos-14]
+        os: [windows-latest, ubuntu-22.04, macos-14]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-
-      - uses: Swatinem/rust-cache@v2
-
-      - name: Install Linux system dependencies
+      - name: Linux libraries
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y pkg-config libdbus-1-dev libxkbcommon-dev \
-            libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
-            libwayland-dev libgl1-mesa-dev
-
-      - name: rustfmt
-        run: cargo fmt --all -- --check
-
-      - name: clippy (warnings are errors, incl. missing docs)
-        run: cargo clippy --all-targets --locked -- -D warnings
-
-      - name: tests
-        run: cargo test --locked
-
+          sudo apt-get install -y pkg-config libdbus-1-dev libxkbcommon-dev libxcb-render0-dev \
+            libxcb-shape0-dev libxcb-xfixes0-dev libwayland-dev libgl1-mesa-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked
       - name: rustdoc
         run: cargo doc --no-deps --locked
         env:
           RUSTDOCFLAGS: -D warnings
+      - name: The Windows setup compiles (installer/aura-portfolio.iss)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo build --locked
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          & $iscc /Qp "/DAppVersion=0.0.0" "/DExe=$PWD\target\debug\aura-portfolio.exe" "/O$env:RUNNER_TEMP" installer\aura-portfolio.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

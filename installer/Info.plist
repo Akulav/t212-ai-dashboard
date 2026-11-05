@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Aura Portfolio.app in the macOS disk image (release.yml fills in @VERSION@). The program inside installs itself into
+     ~/Library/Application Support/Aura Portfolio on its first start and runs from there (src/install.rs).
+     A normal window app: it has a Dock icon (no LSUIElement). -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key><string>Aura Portfolio</string>
+  <key>CFBundleDisplayName</key><string>Aura Portfolio</string>
+  <key>CFBundleIdentifier</key><string>com.akulav.aura-portfolio</string>
+  <key>CFBundleVersion</key><string>@VERSION@</string>
+  <key>CFBundleShortVersionString</key><string>@VERSION@</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleExecutable</key><string>aura-portfolio</string>
+  <key>CFBundleIconFile</key><string>icon</string>
+  <key>LSMinimumSystemVersion</key><string>11.0</string>
+  <key>LSApplicationCategoryType</key><string>public.app-category.finance</string>
+  <key>NSHighResolutionCapable</key><true/>
+</dict>
+</plist>

@@ -222,9 +222,9 @@ impl SettingsPage {
                 RichText::new(format!(
                     "Data folder ({}): {}",
                     if paths.portable {
-                        "portable"
+                        "portable (aura-data)"
                     } else {
-                        "user profile"
+                        "app folder"
                     },
                     paths.root.display()
                 ))

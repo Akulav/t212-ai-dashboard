@@ -1,0 +1,5 @@
+# rustc can overflow its default stack while type-checking Typst's deeply generic crates (the PDF report engine),
+# which shows up as STATUS_STACK_BUFFER_OVERRUN (0xc0000409) on Windows. A bigger stack for every rustc cargo runs
+# fixes it, locally and on CI.
+[env]
+RUST_MIN_STACK = "67108864"

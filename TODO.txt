@@ -1,2 +1,4 @@
 1. claude.md -> add there whatever claude needs + rules to always bump version and do commit with changelog when finished a build;
 2. Improve the UI to be more clean and professional looking, with more symetry;
+3. Auto builds for linux + windows + macos (arm only)
+4. Add the AI (phase 4) tp generate insights, recommandations, buy opportunities (use p/e and other metrics), as well as generate beautiful reports on the whole portfolio + recommendations -> Powered by AI - Made by Akulav

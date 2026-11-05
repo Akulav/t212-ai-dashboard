@@ -66,6 +66,9 @@ credentials*.json
 /t212*.json
 /t212*.toml
 settings.local.*
+local.config
+# Inno Setup's default output folder
+installer/Output/
 
 # Never ignore source code, tests or fixtures, whatever the rules above match.
 !/src/**

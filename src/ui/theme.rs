@@ -1,8 +1,7 @@
-//! "Aurora" dark theme, brand palette and the procedurally drawn logo/icon.
+//! "Aurora" dark theme, brand palette, fonts and the bundled icon.
 //!
-//! The logo — three ascending bars inside a teal→violet rounded tile — is
-//! rendered in code (both the window icon and the in-app mark), so the repo
-//! needs no binary image assets. `assets/logo.svg` mirrors it for the README.
+//! The icon artwork has one master, `assets/icon.svg`; `tools_dev/make_icons.py` draws every size from it. The window
+//! icon and the in-app logo decode `assets/icon-256.png`, which is compiled into the program.
 
 use eframe::egui::{self, Color32, CornerRadius, FontFamily, FontId, Stroke, TextStyle, Vec2};
 
@@ -198,9 +197,26 @@ pub fn lerp(a: Color32, b: Color32, t: f32) -> Color32 {
     Color32::from_rgb(mix(a.r(), b.r()), mix(a.g(), b.g()), mix(a.b(), b.b()))
 }
 
-/// Uploads the brand mark as a GPU texture for use in the UI (`ui.image`).
+/// The icon artwork shipped inside the program (`assets/icon-256.png`, drawn from `assets/icon.svg` by
+/// `tools_dev/make_icons.py`): the window/taskbar icon and the in-app logo use exactly this image.
+pub const ICON_PNG: &[u8] = include_bytes!("../../assets/icon-256.png");
+
+/// The window / taskbar icon, decoded from [`ICON_PNG`].
+pub fn app_icon() -> egui::IconData {
+    let img = image::load_from_memory_with_format(ICON_PNG, image::ImageFormat::Png)
+        .expect("the bundled icon PNG decodes")
+        .to_rgba8();
+    let (width, height) = img.dimensions();
+    egui::IconData {
+        rgba: img.into_raw(),
+        width,
+        height,
+    }
+}
+
+/// Uploads the icon as a GPU texture for use in the UI (`ui.image`).
 pub fn logo_texture(ctx: &egui::Context) -> egui::TextureHandle {
-    let icon = app_icon(128);
+    let icon = app_icon();
     let image = egui::ColorImage::from_rgba_unmultiplied(
         [icon.width as usize, icon.height as usize],
         &icon.rgba,
@@ -208,50 +224,12 @@ pub fn logo_texture(ctx: &egui::Context) -> egui::TextureHandle {
     ctx.load_texture("aura-logo", image, egui::TextureOptions::LINEAR)
 }
 
-/// Renders the brand mark as RGBA pixels for the window/taskbar icon.
-pub fn app_icon(size: u32) -> egui::IconData {
-    let n = size as f32;
-    let mut rgba = Vec::with_capacity((size * size * 4) as usize);
-    let corner = n * 0.24;
-    let bar_w = n * 0.14;
-    let gap = n * 0.07;
-    let base = n - n * 0.22;
-    let left = n / 2.0 - (bar_w * 1.5 + gap);
-    let bars: Vec<(f32, f32, f32)> = [0.28_f32, 0.42, 0.58]
-        .iter()
-        .enumerate()
-        .map(|(i, h)| {
-            let x = left + i as f32 * (bar_w + gap);
-            (x, x + bar_w, base - n * h)
-        })
-        .collect();
-
-    for y in 0..size {
-        for x in 0..size {
-            let (fx, fy) = (x as f32 + 0.5, y as f32 + 0.5);
-            // Rounded-square coverage.
-            let dx = (corner - fx).max(fx - (n - corner)).max(0.0);
-            let dy = (corner - fy).max(fy - (n - corner)).max(0.0);
-            let dist = (dx * dx + dy * dy).sqrt();
-            let alpha = (corner - dist + 0.5).clamp(0.0, 1.0);
-            if alpha <= 0.0 {
-                rgba.extend_from_slice(&[0, 0, 0, 0]);
-                continue;
-            }
-            let on_bar = bars
-                .iter()
-                .any(|&(x0, x1, top)| fx >= x0 && fx <= x1 && fy >= top && fy <= base);
-            let c = if on_bar {
-                Color32::WHITE
-            } else {
-                lerp(ACCENT, VIOLET, (fx + fy) / (2.0 * n))
-            };
-            rgba.extend_from_slice(&[c.r(), c.g(), c.b(), (alpha * 255.0) as u8]);
-        }
-    }
-    egui::IconData {
-        rgba,
-        width: size,
-        height: size,
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn bundled_icon_decodes_at_256px() {
+        let icon = super::app_icon();
+        assert_eq!((icon.width, icon.height), (256, 256));
+        assert_eq!(icon.rgba.len(), 256 * 256 * 4);
     }
 }

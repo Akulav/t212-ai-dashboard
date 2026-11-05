@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- Aura Portfolio's icon master: three ascending white bars on a teal-to-violet rounded tile.
+       tools_dev/make_icons.py draws every icon from this file (icon.ico for the .exe and the setup, icon.icns for the
+       Mac app, icon-<size>.png for the window and the Linux app menu, the setup wizard's pictures). It reads only
+       linearGradient, rect (x, y, width, height, rx), circle and path with absolute M/L/C/Z.
+       The element with id="tile" is the background; the wizard's side picture draws the bars without it. -->
+  <defs>
+    <linearGradient id="aurora" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2DD4BF"/>
+      <stop offset="1" stop-color="#8B5CF6"/>
+    </linearGradient>
+  </defs>
+  <rect id="tile" x="0" y="0" width="256" height="256" rx="61" fill="url(#aurora)"/>
+  <rect x="56.3" y="128" width="35.8" height="71.7" rx="12.5" fill="#ffffff"/>
+  <rect x="110.1" y="92.2" width="35.8" height="107.5" rx="12.5" fill="#ffffff"/>
+  <rect x="163.8" y="51.2" width="35.8" height="148.5" rx="12.5" fill="#ffffff"/>
+</svg>

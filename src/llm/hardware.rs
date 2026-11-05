@@ -148,7 +148,8 @@ fn detect_nvidia() -> Vec<GpuInfo> {
 }
 
 /// GPUs with less dedicated memory than this are treated as integrated and
-/// ignored for offload decisions.
+/// ignored for offload decisions. (Only the Windows and Linux probes use it.)
+#[cfg(any(windows, target_os = "linux"))]
 const MIN_DEDICATED_VRAM: u64 = 2 << 30;
 
 /// Best-effort vendor from a marketing name.
@@ -206,8 +207,10 @@ fn detect_other_gpus() -> Vec<GpuInfo> {
             let mut raw = [0u8; 512];
             let n = read(&sub, "DriverDesc", RRF_RT_REG_SZ, &mut raw)?;
             let units: Vec<u16> = raw[..n]
-                .chunks_exact(2)
-                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|c| u16::from_le_bytes(*c))
                 .take_while(|&u| u != 0)
                 .collect();
             let name = String::from_utf16_lossy(&units).trim().to_string();

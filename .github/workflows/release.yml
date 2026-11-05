@@ -1,25 +1,21 @@
-# Builds Aura Portfolio for Windows x64, Linux x64 and macOS (Apple Silicon)
-# and publishes a GitHub Release. The in-app updater consumes these exact
-# asset names:
-#
-#   aura-portfolio-v<version>-<target-triple>.(zip|tar.gz)
-#   aura-portfolio-v<version>-<target-triple>.(zip|tar.gz).sha256
-#
-# When it runs: after the CI workflow **succeeds** on `main`. It publishes only
-# if the tag `v<version from Cargo.toml>` does not exist yet, so:
-#   * broken code is never released (CI must be green first);
-#   * a failed release is retried automatically on the next green push;
-#   * pushes without a version bump are a cheap no-op.
-#
-# Release flow: bump `version` in Cargo.toml → push to main → CI green → done.
-# Manual run: Actions → Release → "Run workflow" (builds the branch tip).
 name: Release
 
+# Publishes a release by itself: a push to main that changes VERSION (python tools_dev/bump_version.py 1.2.0, commit,
+# push) checks the versions agree, runs the tests, builds Aura Portfolio for Windows, Linux and macOS (Apple Silicon),
+# wraps them in installers, creates the tag v<VERSION> and publishes the release. A version that already has its tag
+# is skipped, so nothing is published twice. "Run workflow" on the Actions page does the same for the current VERSION
+# (e.g. after a failed run).
+#
+# Assets (installed copies update themselves from the bare programs - src/updater.rs::asset_name):
+#   aura-portfolio-windows-x64.exe   aura-portfolio-linux-x64   aura-portfolio-macos-arm64
+#   Aura-Portfolio-Setup.exe (Inno Setup)   Aura-Portfolio-macos-arm64.dmg   SHA256SUMS.txt
+#   + bridge archives for 0.2.x updaters (aura-portfolio-v<V>-<target-triple>.zip/.tar.gz + .sha256; drop after 1.1)
+
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
+  push:
     branches: [main]
+    # (this file too: a change to how releases are made publishes the current version if it isn't out yet)
+    paths: [VERSION, .github/workflows/release.yml]
   workflow_dispatch:
 
 permissions:
@@ -31,193 +27,170 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  BIN_NAME: aura-portfolio
-  # The exact commit CI verified (or the branch tip for manual runs).
-  RELEASE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
 
 jobs:
-  version:
-    name: Detect version bump
-    # Only after a green CI run on a push to main (or a manual dispatch).
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.event == 'push')
+  check:
+    name: New version?
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.detect.outputs.version }}
-      tag: ${{ steps.detect.outputs.tag }}
-      should_release: ${{ steps.detect.outputs.should_release }}
+      version: ${{ steps.v.outputs.version }}
+      publish: ${{ steps.v.outputs.publish }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ env.RELEASE_SHA }}
-          fetch-depth: 0
-
-      - id: detect
-        name: Read version and check for an existing tag
-        shell: bash
+      - id: v
         run: |
-          VERSION=$(grep -m1 -E '^version\s*=' Cargo.toml | sed -E 's/^version\s*=\s*"([^"]+)".*/\1/')
-          TAG="v${VERSION}"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
-            echo "Tag ${TAG} already exists, nothing to release."
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          v="$(tr -d ' \r\n' < VERSION)"
+          c="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)"
+          l="$(awk '/^name = "aura-portfolio"$/ {getline; gsub(/version = |"/, ""); print; exit}' Cargo.lock)"
+          echo "VERSION=$v Cargo.toml=$c Cargo.lock=$l"
+          test "$v" = "$c" || { echo "::error::VERSION $v and Cargo.toml $c differ (python tools_dev/bump_version.py)"; exit 1; }
+          test "$v" = "$l" || { echo "::error::VERSION $v and Cargo.lock $l differ (build once after bumping)"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/v$v" > /dev/null; then
+            echo "::notice::v$v is already released: nothing to publish (bump VERSION for a new release)"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
           else
-            echo "New version ${TAG} detected."
-            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
 
-  build:
-    name: Build ${{ matrix.target }}
-    needs: version
-    if: needs.version.outputs.should_release == 'true'
-    runs-on: ${{ matrix.os }}
+  tests:
+    name: Tests (${{ matrix.os }})
+    needs: check
+    if: needs.check.outputs.publish == 'true'
     strategy:
-      fail-fast: false
       matrix:
-        # `label` names installer files; it must NOT contain the target
-        # triple, so the in-app updater keeps choosing the portable archive.
-        include:
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            archive: zip
-            formats: nsis
-            label: windows-x64
-          - os: ubuntu-22.04 # older glibc = wider Linux compatibility
-            target: x86_64-unknown-linux-gnu
-            archive: tar.gz
-            formats: deb,appimage
-            label: linux-x64
-          # macOS: Apple Silicon only (no Intel Mac builds).
-          - os: macos-14
-            target: aarch64-apple-darwin
-            archive: tar.gz
-            formats: app,dmg
-            label: macos-apple-silicon
-    env:
-      CARGO_PACKAGER_VERSION: 0.11.8
-      # linuxdeploy (AppImage) without FUSE on CI runners.
-      APPIMAGE_EXTRACT_AND_RUN: 1
+        os: [windows-latest, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ env.RELEASE_SHA }}
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.target }}
-
-      - name: Install Linux system dependencies
+      - name: Linux libraries
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y pkg-config libdbus-1-dev libxkbcommon-dev \
-            libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
-            libwayland-dev libgl1-mesa-dev
+          sudo apt-get install -y pkg-config libdbus-1-dev libxkbcommon-dev libxcb-render0-dev \
+            libxcb-shape0-dev libxcb-xfixes0-dev libwayland-dev libgl1-mesa-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --locked
 
-      - name: Build
-        run: cargo build --release --locked --target ${{ matrix.target }}
-
-      - name: Package (tar.gz)
-        if: matrix.archive == 'tar.gz'
+  build:
+    name: Build (${{ matrix.name }})
+    needs: [check, tests]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x64
+            os: windows-latest
+            bin: aura-portfolio.exe
+            asset: aura-portfolio-windows-x64.exe
+            triple: x86_64-pc-windows-msvc
+          - name: linux-x64
+            # (the oldest supported Ubuntu: the program then runs on older Linux systems too)
+            os: ubuntu-22.04
+            bin: aura-portfolio
+            asset: aura-portfolio-linux-x64
+            triple: x86_64-unknown-linux-gnu
+          - name: macos-arm64
+            # (Apple Silicon only)
+            os: macos-14
+            bin: aura-portfolio
+            asset: aura-portfolio-macos-arm64
+            triple: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Linux libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libdbus-1-dev libxkbcommon-dev libxcb-render0-dev \
+            libxcb-shape0-dev libxcb-xfixes0-dev libwayland-dev libgl1-mesa-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build the program
+        run: cargo build --release --locked
+      - name: Name it for the release
         shell: bash
         run: |
-          NAME="${BIN_NAME}-${{ needs.version.outputs.tag }}-${{ matrix.target }}"
           mkdir -p dist
-          cp "target/${{ matrix.target }}/release/${BIN_NAME}" dist/
-          cp README.md LICENSE dist/
-          # Marker: keep all data in ./aura-data next to the binary.
-          echo "Delete this file to store data in your user profile instead." > dist/portable
-          (cd dist && tar -czf "../${NAME}.tar.gz" *)
-          shasum -a 256 "${NAME}.tar.gz" > "${NAME}.tar.gz.sha256"
-
-      - name: Package (zip)
-        if: matrix.archive == 'zip'
+          cp "target/release/${{ matrix.bin }}" "dist/${{ matrix.asset }}"
+          "./target/release/${{ matrix.bin }}" --version || true
+      # (the bare programs above are what installed copies update themselves from)
+      - name: Windows setup wizard (Aura-Portfolio-Setup.exe, with its uninstaller)
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $name = "$env:BIN_NAME-${{ needs.version.outputs.tag }}-${{ matrix.target }}"
-          New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item "target/${{ matrix.target }}/release/$env:BIN_NAME.exe" dist/
-          Copy-Item README.md, LICENSE dist/
-          # Marker: keep all data in .\aura-data next to the exe.
-          "Delete this file to store data in your user profile instead." | Out-File -Encoding ascii dist/portable
-          Compress-Archive -Path dist/* -DestinationPath "$name.zip"
-          $hash = (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLower()
-          "$hash  $name.zip" | Out-File -Encoding ascii "$name.zip.sha256"
-
-      - name: Install cargo-packager
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          $v = (Get-Content VERSION -Raw).Trim()
+          & $iscc /Qp "/DAppVersion=$v" "/DExe=$PWD\target\release\aura-portfolio.exe" "/O$PWD\dist" installer\aura-portfolio.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: macOS app in a disk image (Aura-Portfolio-macos-arm64.dmg)
+        if: runner.os == 'macOS'
+        run: |
+          v="$(tr -d ' \r\n' < VERSION)"
+          app="dmg/Aura Portfolio.app"
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+          cp target/release/aura-portfolio "$app/Contents/MacOS/aura-portfolio"
+          cp assets/icon.icns "$app/Contents/Resources/icon.icns"
+          sed "s/@VERSION@/$v/g" installer/Info.plist > "$app/Contents/Info.plist"
+          codesign --force --deep --sign - "$app"   # (ad hoc: no certificate; macOS still asks once)
+          ln -s /Applications dmg/Applications
+          hdiutil create -volname "Aura Portfolio" -srcfolder dmg -ov -format UDZO dist/Aura-Portfolio-macos-arm64.dmg
+      # Bridge for 0.2.x: its updater looks for <target-triple> archives with a .sha256 beside them. Drop after 1.1.
+      - name: Bridge archive for 0.2.x updaters
         shell: bash
         run: |
-          if ! cargo packager --version 2>/dev/null | grep -q "$CARGO_PACKAGER_VERSION"; then
-            cargo install cargo-packager --locked --version "$CARGO_PACKAGER_VERSION"
+          v="$(tr -d ' \r\n' < VERSION)"
+          name="aura-portfolio-v$v-${{ matrix.triple }}"
+          mkdir -p bridge && cp "target/release/${{ matrix.bin }}" bridge/
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            (cd bridge && 7z a -tzip "../dist/$name.zip" "${{ matrix.bin }}" > /dev/null)
+            (cd dist && sha256sum "$name.zip" > "$name.zip.sha256")
+          else
+            tar -C bridge -czf "dist/$name.tar.gz" "${{ matrix.bin }}"
+            (cd dist && shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256")
           fi
-
-      - name: Build installers (${{ matrix.formats }})
-        run: cargo packager --release --target ${{ matrix.target }} --formats ${{ matrix.formats }}
-
-      - name: Collect installers
-        shell: bash
-        run: |
-          TAG="${{ needs.version.outputs.tag }}"
-          PREFIX="${BIN_NAME}-${TAG}-${{ matrix.label }}"
-          shopt -s nullglob
-          for f in target/packages/*-setup.exe target/packages/*.dmg target/packages/*.deb target/packages/*.AppImage; do
-            case "$f" in
-              *-setup.exe) out="${PREFIX}-setup.exe" ;;
-              *.dmg)       out="${PREFIX}.dmg" ;;
-              *.deb)       out="${PREFIX}.deb" ;;
-              *.AppImage)  out="${PREFIX}.AppImage" ;;
-            esac
-            cp "$f" "$out"
-            if command -v sha256sum >/dev/null; then sha256sum "$out" > "$out.sha256"; else shasum -a 256 "$out" > "$out.sha256"; fi
-            echo "installer: $out"
-          done
-
       - uses: actions/upload-artifact@v4
         with:
-          name: dist-${{ matrix.target }}
+          name: ${{ matrix.name }}
+          path: dist/*
           if-no-files-found: error
-          path: |
-            *.zip
-            *.tar.gz
-            *.exe
-            *.dmg
-            *.deb
-            *.AppImage
-            *.sha256
 
-  publish:
-    name: Publish GitHub Release
-    needs: [version, build]
+  release:
+    name: Publish the release
+    needs: [check, build]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
+      - name: Checksums
+        run: cd dist && sha256sum $(ls | grep -v '\.sha256$') > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - name: Release notes from CHANGELOG.md
+        run: |
+          v="${{ needs.check.outputs.version }}"
+          awk -v v="$v" '$0 ~ "^## \\[?"v"\\]?" {on=1; next} on && /^## / {exit} on {print}' CHANGELOG.md > notes.md
+          test -s notes.md || echo "Aura Portfolio $v" > notes.md
+          cat >> notes.md <<'EOF'
 
-      - uses: softprops/action-gh-release@v2
+          ---
+          **Download:** Windows → `Aura-Portfolio-Setup.exe` · macOS (Apple Silicon) → `Aura-Portfolio-macos-arm64.dmg` ·
+          Linux → `aura-portfolio-linux-x64` (`chmod +x`, then run it: it installs itself).
+          Not code-signed: on Windows click *More info → Run anyway*; on macOS right-click the app → *Open* the first time.
+          Checksums: `SHA256SUMS.txt`.
+          EOF
+          cat notes.md
+      - name: Tag and publish (the tag v<VERSION> is created on this commit)
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.version.outputs.tag }}
-          target_commitish: ${{ env.RELEASE_SHA }}
-          name: Aura Portfolio ${{ needs.version.outputs.tag }}
-          generate_release_notes: true
-          body: |
-            ## Download
-
-            | Platform | Installer (recommended) | Portable |
-            |---|---|---|
-            | Windows 10/11 | `aura-portfolio-${{ needs.version.outputs.tag }}-windows-x64-setup.exe` | `…-x86_64-pc-windows-msvc.zip` |
-            | macOS Apple Silicon | `aura-portfolio-${{ needs.version.outputs.tag }}-macos-apple-silicon.dmg` | `…-aarch64-apple-darwin.tar.gz` |
-            | Linux | `.deb` (Debian/Ubuntu) or `.AppImage` | `…-x86_64-unknown-linux-gnu.tar.gz` |
-
-            Builds are not code-signed yet. Windows SmartScreen may show "More info → Run anyway". On macOS, right-click the app → Open the first time.
-            Every file has a matching `.sha256` checksum.
+          tag_name: v${{ needs.check.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          name: Aura Portfolio ${{ needs.check.outputs.version }}
+          body_path: notes.md
           files: dist/*
+          fail_on_unmatched_files: true
+          make_latest: true

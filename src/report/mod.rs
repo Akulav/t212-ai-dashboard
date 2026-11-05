@@ -24,7 +24,7 @@ use crate::ui::dashboard::short_ticker;
 use crate::ui::format;
 
 const TEMPLATE: &str = include_str!("template.typ");
-const LOGO: &[u8] = include_bytes!("../../assets/icons/256x256.png");
+const LOGO: &[u8] = include_bytes!("../../assets/icon-256.png");
 
 /// Holdings that get a detailed analysis card.
 const ANALYSIS_CARDS: usize = 10;
