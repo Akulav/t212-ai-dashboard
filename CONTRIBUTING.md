@@ -127,5 +127,9 @@ flag in `HardwareProfile` if needed, and extend the `select_assets` tests with t
 ## Releasing
 
 1. Bump `version` in `Cargo.toml` (and run `cargo check` so `Cargo.lock` updates).
-2. Merge to `main`. `release.yml` detects the new version, builds 4 targets, and publishes `vX.Y.Z` with checksums.
+2. Push to `main`. Once **CI passes** on that commit, `release.yml` sees that tag `vX.Y.Z` doesn't exist, builds 4 targets, and publishes the release with checksums.
 3. Running clients see the **Update available** button on their next launch.
+
+If a release build fails, fix it and push again: the release is retried after the next green CI run, as long as the tag still doesn't exist. To build without waiting, use *Actions → Release → Run workflow*.
+
+> Code behind `#[cfg(target_os = …)]` only compiles on that OS, so only the matching CI runner checks it. Cross `cargo check` from Windows doesn't work here (`ring` needs a C cross-compiler), so keep platform-specific code small and let CI verify it.

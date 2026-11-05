@@ -376,7 +376,8 @@ mod tests {
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     #[test]
     fn apple_silicon_uses_metal() {
-        let (backend, assets) = select_assets(&release(), &hw(false, false)).unwrap();
+        let rel = release();
+        let (backend, assets) = select_assets(&rel, &hw(false, false)).unwrap();
         assert_eq!(backend, Backend::Metal);
         assert_eq!(assets[0].name, "llama-b9999-bin-macos-arm64.zip");
     }

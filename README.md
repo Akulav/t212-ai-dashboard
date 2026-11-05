@@ -228,7 +228,7 @@ Closing Aura **always** frees the model's memory:
 t212-ai-dashboard/
 ├── .github/workflows/
 │   ├── ci.yml            # fmt · clippy -D warnings · tests · rustdoc on 3 OSes
-│   └── release.yml       # version bump → 4-target build → GitHub Release
+│   └── release.yml       # after green CI: new version → 4-target build → GitHub Release
 ├── assets/               # logo.svg, banner.svg
 ├── src/
 │   ├── main.rs           # entry point: runtime, panic hook, eframe

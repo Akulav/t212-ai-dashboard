@@ -1,17 +1,25 @@
 # Builds Aura Portfolio for Windows, macOS (Apple Silicon + Intel) and Linux
-# whenever the `version` in Cargo.toml is bumped on `main`, then publishes a
-# GitHub Release. The in-app updater consumes these exact asset names:
+# and publishes a GitHub Release. The in-app updater consumes these exact
+# asset names:
 #
 #   aura-portfolio-v<version>-<target-triple>.(zip|tar.gz)
 #   aura-portfolio-v<version>-<target-triple>.(zip|tar.gz).sha256
 #
-# Release flow: bump `version` in Cargo.toml → merge to main → done.
+# When it runs: after the CI workflow **succeeds** on `main`. It publishes only
+# if the tag `v<version from Cargo.toml>` does not exist yet, so:
+#   * broken code is never released (CI must be green first);
+#   * a failed release is retried automatically on the next green push;
+#   * pushes without a version bump are a cheap no-op.
+#
+# Release flow: bump `version` in Cargo.toml → push to main → CI green → done.
+# Manual run: Actions → Release → "Run workflow" (builds the branch tip).
 name: Release
 
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
-    paths: ["Cargo.toml"]
   workflow_dispatch:
 
 permissions:
@@ -24,10 +32,17 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   BIN_NAME: aura-portfolio
+  # The exact commit CI verified (or the branch tip for manual runs).
+  RELEASE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
 
 jobs:
   version:
     name: Detect version bump
+    # Only after a green CI run on a push to main (or a manual dispatch).
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.detect.outputs.version }}
@@ -36,6 +51,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ env.RELEASE_SHA }}
           fetch-depth: 0
 
       - id: detect
@@ -77,6 +93,8 @@ jobs:
             archive: tar.gz
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SHA }}
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -142,7 +160,7 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.version.outputs.tag }}
-          target_commitish: ${{ github.sha }}
+          target_commitish: ${{ env.RELEASE_SHA }}
           name: Aura Portfolio ${{ needs.version.outputs.tag }}
           generate_release_notes: true
           files: dist/*
