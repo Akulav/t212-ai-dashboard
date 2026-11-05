@@ -127,6 +127,12 @@ pub struct GithubRelease {
     pub body: Option<String>,
     /// Downloadable files.
     pub assets: Vec<GithubAsset>,
+    /// Marked as a pre-release (llama.cpp publishes its builds this way).
+    #[serde(default)]
+    pub prerelease: bool,
+    /// Unpublished draft.
+    #[serde(default)]
+    pub draft: bool,
 }
 
 /// A file attached to a [`GithubRelease`].
@@ -153,6 +159,40 @@ pub async fn latest_release(client: &Client, repo: &str) -> Result<GithubRelease
         .json::<GithubRelease>()
         .await?;
     Ok(release)
+}
+
+/// Lists the most recent releases of `owner/repo` (newest first), including
+/// pre-releases. `latest_release` skips pre-releases, which is where some
+/// projects (e.g. llama.cpp) now publish their binaries.
+pub async fn list_releases(
+    client: &Client,
+    repo: &str,
+    per_page: u32,
+) -> Result<Vec<GithubRelease>> {
+    let url = format!("https://api.github.com/repos/{repo}/releases?per_page={per_page}");
+    let releases = client
+        .get(&url)
+        .header(header::ACCEPT, "application/vnd.github+json")
+        .send()
+        .await
+        .with_context(|| format!("GET {url}"))?
+        .error_for_status()?
+        .json::<Vec<GithubRelease>>()
+        .await?;
+    Ok(releases)
+}
+
+/// Downloads a small text file.
+pub async fn fetch_text(client: &Client, url: &str) -> Result<String> {
+    Ok(client
+        .get(url)
+        .timeout(Duration::from_secs(20))
+        .send()
+        .await
+        .with_context(|| format!("GET {url}"))?
+        .error_for_status()?
+        .text()
+        .await?)
 }
 
 /// Formats a byte count as `1.23 GB` (decimal units, matching download sites).

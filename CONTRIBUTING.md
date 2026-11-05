@@ -130,6 +130,7 @@ flag in `HardwareProfile` if needed, and extend the `select_assets` tests with t
   ```
 
   macOS uses `--formats app,dmg` and Linux uses `--formats deb,appimage`. CI builds all of them on each release.
+- **Local-AI check:** `cargo run --example llm_check` prints the detected CPU/GPU/VRAM and the model fit, runs the real llama.cpp installer into a temp folder, and lists the devices `llama-server` can use. If the GitHub API is rate-limited (60 requests/h without auth), the installer falls back to direct downloads.
 - **Trading212 diagnostics:** `cargo run --example t212_diagnose` checks each endpoint with your stored key (read-only, and it never prints secrets). `-- sync` runs the full sync into a throwaway folder.
 
 ## Demo mode & screenshots

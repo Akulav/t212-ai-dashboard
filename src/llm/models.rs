@@ -118,6 +118,30 @@ pub const CATALOG: &[ModelSpec] = &[
         layers: 48,
         blurb: "Deeper reasoning for 12–16 GB GPUs.",
     },
+    // Qwen 3.8 27B (Aug 2026), unsloth dynamic quants. Sizes verified
+    // against the HuggingFace file listing; 64 layers per the model config.
+    ModelSpec {
+        id: "qwen3.8-27b-iq3xxs",
+        name: "Qwen 3.8 27B",
+        params_b: 27.0,
+        quant: "UD-IQ3_XXS",
+        repo: "unsloth/Qwen3.8-27B-GGUF",
+        file: "Qwen3.8-27B-UD-IQ3_XXS.gguf",
+        size_bytes: 10_934_860_704,
+        layers: 64,
+        blurb: "Latest-gen 27B, compact quant that fits fully in 12–16 GB of VRAM.",
+    },
+    ModelSpec {
+        id: "qwen3.8-27b-q4km",
+        name: "Qwen 3.8 27B",
+        params_b: 27.0,
+        quant: "UD-Q4_K_M",
+        repo: "unsloth/Qwen3.8-27B-GGUF",
+        file: "Qwen3.8-27B-UD-Q4_K_M.gguf",
+        size_bytes: 16_464_440_224,
+        layers: 64,
+        blurb: "Latest-gen 27B at full Q4 quality; best on 20–24 GB GPUs.",
+    },
     ModelSpec {
         id: "qwen2.5-32b-q4km",
         name: "Qwen 2.5 32B Instruct",
@@ -254,6 +278,23 @@ mod tests {
         assert_eq!(recommend(&machine(64, Some(24))).id, "qwen2.5-32b-q4km");
         // No GPU: cap at an 8B-class model on CPU.
         assert!(recommend(&machine(16, None)).params_b <= 8.5);
+        // 16 GB card (e.g. RX 9070 XT): the compact Qwen 3.8 27B fits fully,
+        // the Q4 build offloads most layers.
+        let card16 = machine(32, Some(16));
+        assert_eq!(recommend(&card16).id, "qwen3.8-27b-iq3xxs");
+        let q4 = find("qwen3.8-27b-q4km").unwrap();
+        assert_eq!(assess(q4, &card16), Fit::PartialOffload);
+        assert!(gpu_layers(q4, &card16) >= 56);
+    }
+
+    #[test]
+    fn catalog_is_sorted_by_size() {
+        // `recommend` walks the catalog from the end, so order matters.
+        assert!(
+            CATALOG
+                .windows(2)
+                .all(|w| w[0].size_bytes <= w[1].size_bytes)
+        );
     }
 
     #[test]

@@ -1,0 +1,2 @@
+1. claude.md -> add there whatever claude needs + rules to always bump version and do commit with changelog when finished a build;
+2. Improve the UI to be more clean and professional looking, with more symetry;

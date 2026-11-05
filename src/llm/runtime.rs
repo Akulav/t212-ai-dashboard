@@ -21,7 +21,7 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use chrono::{DateTime, Utc};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -204,6 +204,112 @@ pub fn select_assets<'a>(
     ))
 }
 
+/// The build tag upstream currently recommends, if it publishes one.
+///
+/// Since late 2026 llama.cpp's "latest" release is a versioned stub (e.g.
+/// `v0.9.0`) whose only asset is `nightly-tag.txt`, naming the current build
+/// (e.g. `b12110`); the binaries live on per-build pre-releases.
+async fn preferred_build_tag(http: &Client, releases: &[GithubRelease]) -> Option<String> {
+    let asset = releases
+        .iter()
+        .filter(|r| !r.draft)
+        .flat_map(|r| r.assets.iter())
+        .find(|a| a.name == "nightly-tag.txt")?;
+    let tag = net::fetch_text(http, &asset.browser_download_url)
+        .await
+        .ok()?;
+    let tag = tag.trim();
+    (!tag.is_empty() && tag.len() < 40).then(|| tag.to_string())
+}
+
+/// Chooses the release to install: the `preferred` build if it has a
+/// compatible asset, otherwise the newest release that does. Drafts and
+/// asset-less stubs are skipped; a build still uploading simply won't match
+/// yet and the next one is used.
+pub fn pick_release<'a>(
+    releases: &'a [GithubRelease],
+    preferred: Option<&str>,
+    hw: &HardwareProfile,
+) -> Result<(&'a GithubRelease, Backend, Vec<GithubAsset>)> {
+    let preferred_first = preferred
+        .and_then(|tag| releases.iter().find(|r| r.tag_name == tag))
+        .into_iter()
+        .chain(releases.iter());
+    preferred_first
+        .filter(|r| !r.draft)
+        .find_map(|r| {
+            select_assets(r, hw)
+                .ok()
+                .map(|(b, assets)| (r, b, assets.into_iter().cloned().collect()))
+        })
+        .ok_or_else(|| {
+            anyhow!(
+                "no compatible llama.cpp build found in the {} most recent releases for {}",
+                releases.len(),
+                crate::TARGET
+            )
+        })
+}
+
+/// Archive names a rule would match for build `tag`, for probing download
+/// URLs directly. Only single-token rules (`-bin-<platform>`) qualify; CUDA
+/// needs a matching runtime-DLL bundle, so it is left to the API path.
+pub fn direct_asset_names(rule: &AssetRule, tag: &str) -> Vec<String> {
+    match rule.include {
+        [token] if token.starts_with("-bin-") && rule.backend != Backend::Cuda => {
+            vec![
+                format!("llama-{tag}{token}.zip"),
+                format!("llama-{tag}{token}.tar.gz"),
+            ]
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// Fallback that avoids the GitHub REST API: read the current build tag from
+/// the stable release's `nightly-tag.txt` (a plain download URL), then probe
+/// the expected archive names for this platform in preference order.
+async fn direct_download_plan(
+    http: &Client,
+    hw: &HardwareProfile,
+) -> Result<(String, Backend, Vec<GithubAsset>)> {
+    let base = format!("https://github.com/{LLAMA_CPP_REPO}/releases");
+    let tag = net::fetch_text(http, &format!("{base}/latest/download/nightly-tag.txt"))
+        .await
+        .context("could not read the current llama.cpp build tag")?
+        .trim()
+        .to_string();
+    if tag.is_empty() || tag.len() > 40 || tag.contains('/') {
+        bail!("unexpected llama.cpp build tag {tag:?}");
+    }
+    for rule in asset_rules(hw) {
+        for name in direct_asset_names(&rule, &tag) {
+            let url = format!("{base}/download/{tag}/{name}");
+            let ok = http
+                .head(&url)
+                .timeout(std::time::Duration::from_secs(20))
+                .send()
+                .await
+                .is_ok_and(|r| r.status().is_success());
+            if ok {
+                return Ok((
+                    tag,
+                    rule.backend,
+                    vec![GithubAsset {
+                        name,
+                        browser_download_url: url,
+                        size: 0,
+                    }],
+                ));
+            }
+        }
+    }
+    bail!(
+        "no compatible llama.cpp archive found for build {tag} on {}",
+        crate::TARGET
+    )
+}
+
 /// `"llama-b1-bin-win-cuda-12.4-x64.zip"` → `"cuda-12.4"`.
 fn cuda_version_token(name: &str) -> Option<String> {
     let lower = name.to_lowercase();
@@ -222,11 +328,23 @@ pub async fn install(
     mut on_stage: impl FnMut(InstallStage),
 ) -> Result<RuntimeManifest> {
     on_stage(InstallStage::Resolving);
-    let release = net::latest_release(http, LLAMA_CPP_REPO)
-        .await
-        .context("could not query llama.cpp releases")?;
-    let (backend, assets) = select_assets(&release, hw)?;
-    tracing::info!(tag = %release.tag_name, %backend, "installing llama.cpp runtime");
+    let (tag, backend, assets) = match net::list_releases(http, LLAMA_CPP_REPO, 30).await {
+        Ok(releases) => {
+            let preferred = preferred_build_tag(http, &releases).await;
+            let (release, backend, assets) = pick_release(&releases, preferred.as_deref(), hw)?;
+            (release.tag_name.clone(), backend, assets)
+        }
+        Err(api_err) => {
+            // Typically the unauthenticated GitHub API rate limit (60/h per IP).
+            tracing::warn!("GitHub API unavailable ({api_err:#}); trying direct downloads");
+            direct_download_plan(http, hw).await.with_context(|| {
+                format!(
+                    "GitHub API unavailable ({api_err:#}) and the direct-download fallback failed"
+                )
+            })?
+        }
+    };
+    tracing::info!(%tag, %backend, "installing llama.cpp runtime");
 
     let mut archives = Vec::new();
     for asset in &assets {
@@ -244,7 +362,7 @@ pub async fn install(
     }
 
     on_stage(InstallStage::Extracting);
-    let dir_name = format!("{}-{}", release.tag_name, backend).to_lowercase();
+    let dir_name = format!("{tag}-{backend}").to_lowercase();
     let install_root = paths.runtime.join("llama.cpp").join(&dir_name);
     let runtime_root = paths.runtime.clone();
     let archives_for_blocking = archives.clone();
@@ -268,7 +386,7 @@ pub async fn install(
     .await??;
 
     let manifest = RuntimeManifest {
-        tag: release.tag_name.clone(),
+        tag,
         backend,
         assets: assets.iter().map(|a| a.name.clone()).collect(),
         server_exe: server_rel,
@@ -327,7 +445,80 @@ mod tests {
             .into_iter()
             .map(asset)
             .collect(),
+            prerelease: true,
+            draft: false,
         }
+    }
+
+    fn build(tag: &str) -> GithubRelease {
+        let mut r = release();
+        r.tag_name = tag.into();
+        r
+    }
+
+    /// Upstream layout since late 2026: a versioned stub "latest" release with
+    /// only `nightly-tag.txt`, and binaries on per-build pre-releases.
+    fn upstream_layout() -> Vec<GithubRelease> {
+        let stub = GithubRelease {
+            tag_name: "v0.9.0".into(),
+            html_url: String::new(),
+            body: None,
+            assets: vec![asset("nightly-tag.txt")],
+            prerelease: false,
+            draft: false,
+        };
+        let uploading = GithubRelease {
+            assets: vec![asset("llama-b12120-ui.tar.gz")],
+            ..build("b12120")
+        };
+        vec![uploading, stub, build("b12119"), build("b12110")]
+    }
+
+    #[test]
+    fn skips_stub_and_incomplete_releases() {
+        let rels = upstream_layout();
+        let (r, _, assets) = pick_release(&rels, None, &hw(false, false)).unwrap();
+        assert_eq!(r.tag_name, "b12119");
+        assert!(!assets.is_empty());
+    }
+
+    #[test]
+    fn prefers_nightly_tag_build() {
+        let rels = upstream_layout();
+        let (r, _, _) = pick_release(&rels, Some("b12110"), &hw(false, false)).unwrap();
+        assert_eq!(r.tag_name, "b12110");
+        // Unknown preferred tag falls back to the newest compatible build.
+        let (r, _, _) = pick_release(&rels, Some("b1"), &hw(false, false)).unwrap();
+        assert_eq!(r.tag_name, "b12119");
+    }
+
+    #[test]
+    fn direct_names_match_real_upstream_assets() {
+        // Every non-CUDA rule's derived names must include an archive that
+        // the rule itself matches (i.e. the fallback probes real file names).
+        for rule in asset_rules(&hw(true, true)) {
+            let names = direct_asset_names(&rule, "b12119");
+            if rule.backend == Backend::Cuda {
+                assert!(names.is_empty());
+            } else {
+                assert!(names.iter().all(|n| rule.matches(n)), "{names:?}");
+            }
+        }
+        let vulkan = AssetRule {
+            backend: Backend::Vulkan,
+            include: &["-bin-win-vulkan-x64"],
+            exclude: &[],
+        };
+        assert_eq!(
+            direct_asset_names(&vulkan, "b12119")[0],
+            "llama-b12119-bin-win-vulkan-x64.zip"
+        );
+    }
+
+    #[test]
+    fn no_compatible_release_is_an_error() {
+        let rels = vec![upstream_layout().remove(1)];
+        assert!(pick_release(&rels, None, &hw(false, false)).is_err());
     }
 
     fn hw(nvidia: bool, vulkan: bool) -> HardwareProfile {
