@@ -104,3 +104,5 @@ __pycache__/
 
 # --- Claude Code local state -------------------------------------------------
 .claude/settings.local.json
+# graphify knowledge graph (local, rebuilt with `graphify update .`)
+graphify-out/
