@@ -174,7 +174,10 @@ impl SettingsPage {
                     changed = true;
                 }
                 if ui
-                    .radio(is_sec, "SEC EDGAR — US-listed companies, free")
+                    .radio(
+                        is_sec,
+                        "Public filings: US (SEC EDGAR), EU and UK (ESEF), free",
+                    )
                     .clicked()
                     && !is_sec
                 {
@@ -186,7 +189,7 @@ impl SettingsPage {
             });
             if let Provider::SecEdgar { contact_email } = &mut settings.fundamentals_provider {
                 ui.horizontal(|ui| {
-                    ui.label("Contact email");
+                    ui.label("Contact email (US only)");
                     changed |= ui
                         .add(
                             egui::TextEdit::singleline(contact_email)
@@ -195,13 +198,15 @@ impl SettingsPage {
                         )
                         .changed();
                     if !contact_email.contains('@') {
-                        chip(ui, "required", WARNING);
+                        chip(ui, "needed for US stocks", WARNING);
                     }
                 });
                 ui.label(
                     RichText::new(
-                        "SEC's fair-access policy requires a contact email in each request. It is sent only to sec.gov. \
-                         UK/EU listings and ETFs aren't covered by SEC and will show “No data”.",
+                        "US stocks: SEC's fair-access policy requires a contact email in each request; it is sent only \
+                         to sec.gov. EU and UK stocks: annual IFRS reports (ESEF/UKSEF) from filings.xbrl.org, found by \
+                         ISIN through GLEIF, converted with ECB rates; no email or key needed. Other markets and ETFs \
+                         show “No data”.",
                     )
                     .size(11.5)
                     .color(MUTED),

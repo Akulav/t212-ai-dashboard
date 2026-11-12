@@ -439,64 +439,74 @@ impl AuraApp {
     /// Full-height sidebar: brand, grouped navigation, and a status stack
     /// (market bell, trading mode, version/update) pinned to the bottom.
     fn nav_rail(&mut self, ctx: &egui::Context) {
+        // A floating glass panel, like Hyve's sidebar.
         egui::SidePanel::left("nav")
-            .exact_width(232.0)
+            .exact_width(258.0)
             .resizable(false)
-            .frame(
-                egui::Frame::new()
-                    .fill(SURFACE)
-                    .stroke(Stroke::new(1.0_f32, BORDER))
-                    .inner_margin(Margin {
-                        left: 14,
-                        right: 14,
-                        top: 18,
-                        bottom: 14,
-                    }),
-            )
+            .show_separator_line(false)
+            .frame(egui::Frame::new())
             .show(ctx, |ui| {
-                // Brand.
-                ui.horizontal(|ui| {
-                    ui.add(egui::Image::new((self.logo.id(), egui::vec2(36.0, 36.0))));
-                    ui.vertical(|ui| {
-                        ui.spacing_mut().item_spacing.y = 0.0;
-                        ui.label(
-                            RichText::new("Aura")
-                                .font(theme::semibold(19.0))
-                                .color(TEXT),
-                        );
-                        ui.label(
-                            RichText::new("Portfolio intelligence")
-                                .size(11.5)
-                                .color(MUTED),
-                        );
-                    });
-                });
-                ui.add_space(18.0);
-
-                for page in Page::ALL {
-                    if let Some(group) = page.group() {
-                        ui.add_space(10.0);
-                        ui.horizontal(|ui| {
-                            ui.add_space(8.0);
-                            widgets::section_title(ui, group);
+                let gap = theme::WINDOW_GAP;
+                let panel = egui::Rect::from_min_max(
+                    ui.max_rect().min + egui::vec2(gap, gap),
+                    ui.max_rect().max - egui::vec2(0.0, gap),
+                );
+                ui.painter().rect(
+                    panel,
+                    egui::CornerRadius::same(16),
+                    GLASS,
+                    Stroke::new(1.0_f32, GLASS_BORDER),
+                    egui::StrokeKind::Inside,
+                );
+                let inner = egui::Rect::from_min_max(
+                    panel.min + egui::vec2(12.0, 16.0),
+                    panel.max - egui::vec2(12.0, 12.0),
+                );
+                ui.scope_builder(egui::UiBuilder::new().max_rect(inner), |ui| {
+                    // Brand.
+                    ui.horizontal(|ui| {
+                        ui.add(egui::Image::new((self.logo.id(), egui::vec2(36.0, 36.0))));
+                        ui.vertical(|ui| {
+                            ui.spacing_mut().item_spacing.y = 0.0;
+                            ui.label(
+                                RichText::new("Aura")
+                                    .font(theme::semibold(19.0))
+                                    .color(TEXT),
+                            );
+                            ui.label(
+                                RichText::new("Portfolio intelligence")
+                                    .size(11.5)
+                                    .color(MUTED),
+                            );
                         });
-                        ui.add_space(2.0);
-                    }
-                    if nav_item(ui, page.nav(), self.page == page).clicked() {
-                        self.page = page;
-                    }
-                }
+                    });
+                    ui.add_space(18.0);
 
-                ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
-                    ui.horizontal(|ui| self.update_button(ui));
-                    ui.add_space(6.0);
-                    let (icon, text, color) = match self.settings.trading_mode {
-                        TradingMode::ReadOnly => (ph::LOCK_SIMPLE, "Read-only", ACCENT),
-                        TradingMode::ReadWrite => (ph::WARNING, "Trading enabled", WARNING),
-                    };
-                    widgets::chip(ui, &format!("{icon}  {text}"), color);
-                    ui.add_space(6.0);
-                    market_bell(ui);
+                    for page in Page::ALL {
+                        if let Some(group) = page.group() {
+                            ui.add_space(10.0);
+                            ui.horizontal(|ui| {
+                                ui.add_space(8.0);
+                                widgets::section_title(ui, group);
+                            });
+                            ui.add_space(2.0);
+                        }
+                        if nav_item(ui, page.nav(), self.page == page).clicked() {
+                            self.page = page;
+                        }
+                    }
+
+                    ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
+                        ui.horizontal(|ui| self.update_button(ui));
+                        ui.add_space(6.0);
+                        let (icon, text, color) = match self.settings.trading_mode {
+                            TradingMode::ReadOnly => (ph::LOCK_SIMPLE, "Read-only", ACCENT),
+                            TradingMode::ReadWrite => (ph::WARNING, "Trading enabled", WARNING),
+                        };
+                        widgets::chip(ui, &format!("{icon}  {text}"), color);
+                        ui.add_space(6.0);
+                        market_bell(ui);
+                    });
                 });
             });
     }
@@ -505,12 +515,12 @@ impl AuraApp {
         let telemetry = self.telemetry.snapshot();
         egui::TopBottomPanel::bottom("footer")
             .exact_height(34.0)
-            .frame(
-                egui::Frame::new()
-                    .fill(SURFACE)
-                    .stroke(Stroke::new(1.0_f32, BORDER))
-                    .inner_margin(Margin::symmetric(16, 6)),
-            )
+            .frame(egui::Frame::new().inner_margin(Margin {
+                left: 20,
+                right: 18,
+                top: 6,
+                bottom: 6,
+            }))
             .show(ctx, |ui| {
                 ui.horizontal_centered(|ui| {
                     ui.spacing_mut().item_spacing.x = 5.0;
@@ -535,20 +545,53 @@ fn nav_item(ui: &mut egui::Ui, (icon, label): (&str, &str), selected: bool) -> e
         ui.allocate_exact_size(egui::vec2(ui.available_width(), 40.0), egui::Sense::click());
     let p = ui.painter();
     let hovered = resp.hovered();
-    if selected || hovered {
-        let fill = if selected {
-            ACCENT.linear_multiply(0.12)
-        } else {
-            SURFACE_2
-        };
-        p.rect_filled(rect, egui::CornerRadius::same(10), fill);
-    }
+    let radius = egui::CornerRadius::same(10);
+    // Hyve's nav item: a faint hover, and for the current page an accent gradient with an accent border.
     if selected {
-        let bar = egui::Rect::from_min_size(
-            rect.left_top() + egui::vec2(0.0, 10.0),
-            egui::vec2(3.0, 20.0),
+        let (left, right) = (ACCENT.gamma_multiply(0.28), ACCENT.gamma_multiply(0.07));
+        p.rect_filled(rect, radius, right);
+        let mut mesh = egui::Mesh::default();
+        let fade = egui::Rect::from_min_max(
+            rect.min + egui::vec2(10.0, 0.0),
+            rect.max - egui::vec2(10.0, 0.0),
         );
-        p.rect_filled(bar, egui::CornerRadius::same(2), ACCENT);
+        for (pos, c) in [
+            (fade.left_top(), left),
+            (fade.right_top(), egui::Color32::TRANSPARENT),
+            (fade.right_bottom(), egui::Color32::TRANSPARENT),
+            (fade.left_bottom(), left),
+        ] {
+            mesh.vertices.push(egui::epaint::Vertex {
+                pos,
+                uv: egui::epaint::WHITE_UV,
+                color: c,
+            });
+        }
+        mesh.add_triangle(0, 1, 2);
+        mesh.add_triangle(0, 2, 3);
+        p.with_clip_rect(rect.intersect(p.clip_rect())).add(mesh);
+        p.rect_filled(
+            egui::Rect::from_min_max(rect.min, egui::pos2(rect.min.x + 10.0, rect.max.y)),
+            egui::CornerRadius {
+                nw: 10,
+                sw: 10,
+                ne: 0,
+                se: 0,
+            },
+            left,
+        );
+        p.rect_stroke(
+            rect,
+            radius,
+            Stroke::new(1.0_f32, ACCENT.gamma_multiply(0.38)),
+            egui::StrokeKind::Inside,
+        );
+    } else if hovered {
+        p.rect_filled(
+            rect,
+            radius,
+            egui::Color32::from_rgba_premultiplied(13, 13, 14, 13),
+        );
     }
     let color = if selected {
         TEXT
@@ -599,13 +642,14 @@ impl eframe::App for AuraApp {
         self.services.portfolio.tick();
         let portfolio_state = self.services.portfolio.snapshot();
 
+        theme::paint_backdrop(ctx);
         // Sidebar first so it spans the full window height.
         self.nav_rail(ctx);
         self.footer(ctx);
 
         let env_before = self.settings.environment;
         egui::CentralPanel::default()
-            .frame(egui::Frame::new().fill(BG).inner_margin(Margin {
+            .frame(egui::Frame::new().inner_margin(Margin {
                 left: 28,
                 right: 28,
                 top: 24,

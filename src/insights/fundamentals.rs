@@ -122,9 +122,10 @@ pub enum Provider {
     None,
     /// Built-in synthetic data (demo mode only).
     Demo,
-    /// SEC EDGAR (US listings). SEC requires a contact email per request.
+    /// Public filings, all free: SEC EDGAR for US listings ([`super::sec`]) and ESEF/UKSEF annual reports for EU and
+    /// UK listings ([`super::esef`]). (The name is kept so saved settings keep loading.)
     SecEdgar {
-        /// Contact email sent in the User-Agent, as SEC's policy requires.
+        /// Contact email sent to SEC in the User-Agent, as SEC's policy requires (US listings only).
         contact_email: String,
     },
 }
@@ -135,7 +136,7 @@ impl Provider {
         match self {
             Self::None => "None",
             Self::Demo => "Demo data",
-            Self::SecEdgar { .. } => "SEC EDGAR",
+            Self::SecEdgar { .. } => "Public filings (SEC EDGAR, ESEF/UKSEF)",
         }
     }
 
@@ -150,7 +151,11 @@ impl Provider {
             Self::None => Ok(None),
             Self::Demo => Ok(super::demo::fundamentals(lookup)),
             Self::SecEdgar { contact_email } => {
-                super::sec::fetch(http, contact_email, cache_dir, lookup).await
+                if super::sec::us_symbol(&lookup.ticker).is_some() {
+                    super::sec::fetch(http, contact_email, cache_dir, lookup).await
+                } else {
+                    super::esef::fetch(http, lookup).await
+                }
             }
         }
     }

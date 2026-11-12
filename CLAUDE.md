@@ -99,7 +99,7 @@ internal).
 | `main.rs`, `install.rs`, `updater.rs`, `paths.rs` | start-up, self-install, updates, the data folder |
 | `t212/` | Trading212 API client: Basic auth, per-endpoint rate limits, pagination, write guard |
 | `portfolio/` | sync service + cache (`store.rs`), pure analytics, demo data |
-| `insights/` | fundamentals (SEC EDGAR, `sec.rs`), scoring, LLM prompts, insights service |
+| `insights/` | fundamentals (SEC EDGAR `sec.rs` for US, ESEF/UKSEF `esef.rs` for EU/UK; `cargo run --example esef_check -- <ISIN> <CCY> <price>`), scoring, LLM prompts, insights service |
 | `report/` | branded PDF report (Typst) — "Powered by AI · Made by Akulav" |
 | `llm/` | llama.cpp runtime install, GPU/RAM detection, model catalog, server process |
 | `ui/` | egui app: theme, widgets, one file per page |

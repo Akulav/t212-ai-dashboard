@@ -15,9 +15,9 @@ pub const GAP: f32 = 16.0;
 
 fn card_frame() -> egui::Frame {
     egui::Frame::new()
-        .fill(SURFACE)
-        .stroke(Stroke::new(1.0_f32, BORDER))
-        .corner_radius(CornerRadius::same(14))
+        .fill(GLASS)
+        .stroke(Stroke::new(1.0_f32, GLASS_BORDER))
+        .corner_radius(CornerRadius::same(16))
         .inner_margin(Margin::same(18))
 }
 

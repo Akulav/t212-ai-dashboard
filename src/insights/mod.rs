@@ -14,6 +14,7 @@
 
 pub mod ai;
 pub mod demo;
+pub mod esef;
 pub mod fundamentals;
 pub mod scoring;
 pub mod sec;

@@ -45,7 +45,7 @@ fn windows_resources(root: &std::path::Path, version: &str) {
         .set("CompanyName", "Akulav")
         .set("InternalName", "aura-portfolio")
         .set("OriginalFilename", "aura-portfolio.exe")
-        .set("LegalCopyright", "© 2026 Akulav. MIT License.")
+        .set("LegalCopyright", "© 2026 Akulav. Source-available license.")
         .set("FileVersion", version)
         .set("ProductVersion", version);
     if let Err(e) = res.compile() {

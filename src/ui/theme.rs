@@ -1,4 +1,6 @@
-//! "Aurora" dark theme, brand palette, fonts and the bundled icon.
+//! "Aurora" dark theme, brand palette, fonts and the bundled icon. The look follows Akulav's newer apps (Hyve,
+//! Lumen): a deep blue-black backdrop with soft glows ([`paint_backdrop`]) and glass panels and cards with hairline
+//! borders ([`palette::GLASS`]).
 //!
 //! The icon artwork has one master, `assets/icon.svg`; `tools_dev/make_icons.py` draws every size from it. The window
 //! icon and the in-app logo decode `assets/icon-256.png`, which is compiled into the program.
@@ -10,17 +12,21 @@ pub mod palette {
     use eframe::egui::Color32;
 
     /// App background.
-    pub const BG: Color32 = Color32::from_rgb(0x0A, 0x0E, 0x17);
-    /// Card / panel surface.
-    pub const SURFACE: Color32 = Color32::from_rgb(0x11, 0x17, 0x24);
+    pub const BG: Color32 = Color32::from_rgb(0x09, 0x0B, 0x14);
+    /// Solid panel surface (popups, dialogs).
+    pub const SURFACE: Color32 = Color32::from_rgb(0x10, 0x13, 0x1F);
     /// Raised surface (hover, inputs).
-    pub const SURFACE_2: Color32 = Color32::from_rgb(0x18, 0x20, 0x31);
+    pub const SURFACE_2: Color32 = Color32::from_rgb(0x17, 0x1B, 0x2A);
     /// Hairline borders.
-    pub const BORDER: Color32 = Color32::from_rgb(0x23, 0x2D, 0x42);
+    pub const BORDER: Color32 = Color32::from_rgb(0x2A, 0x2F, 0x45);
+    /// Glass: translucent white over the backdrop (cards and the sidebar), so the glows show through.
+    pub const GLASS: Color32 = Color32::from_rgba_premultiplied(14, 14, 15, 14);
+    /// Hairline border of glass panels.
+    pub const GLASS_BORDER: Color32 = Color32::from_rgba_premultiplied(24, 24, 26, 24);
     /// Primary text.
-    pub const TEXT: Color32 = Color32::from_rgb(0xE6, 0xEA, 0xF2);
+    pub const TEXT: Color32 = Color32::from_rgb(0xE8, 0xEA, 0xF6);
     /// Secondary text.
-    pub const MUTED: Color32 = Color32::from_rgb(0x8A, 0x94, 0xA8);
+    pub const MUTED: Color32 = Color32::from_rgb(0x8F, 0x95, 0xB2);
     /// Aurora teal (primary accent).
     pub const ACCENT: Color32 = Color32::from_rgb(0x2D, 0xD4, 0xBF);
     /// Aurora violet (secondary accent).
@@ -47,6 +53,62 @@ pub mod palette {
 }
 
 use palette::*;
+
+/// Gap between the window edge, the sidebar panel and the content.
+pub const WINDOW_GAP: f32 = 14.0;
+
+/// Soft radial glow: `color` in the middle, fading to nothing at `radius`.
+fn radial(mesh: &mut egui::Mesh, center: egui::Pos2, radius: Vec2, color: Color32) {
+    use egui::epaint::{Vertex, WHITE_UV};
+    let base = mesh.vertices.len() as u32;
+    mesh.vertices.push(Vertex {
+        pos: center,
+        uv: WHITE_UV,
+        color,
+    });
+    let n = 48;
+    for i in 0..=n {
+        let a = i as f32 / n as f32 * std::f32::consts::TAU;
+        let pos = center + egui::vec2(a.cos() * radius.x, a.sin() * radius.y);
+        mesh.vertices.push(Vertex {
+            pos,
+            uv: WHITE_UV,
+            color: Color32::TRANSPARENT,
+        });
+    }
+    for i in 0..n {
+        mesh.add_triangle(base, base + 1 + i, base + 2 + i);
+    }
+}
+
+/// Paints the window backdrop: the base colour with a teal glow top-left, a violet glow top-right and a faint sky
+/// one below.
+pub fn paint_backdrop(ctx: &egui::Context) {
+    let r = ctx.screen_rect();
+    let p = ctx.layer_painter(egui::LayerId::background());
+    p.rect_filled(r, CornerRadius::ZERO, BG);
+    let (w, h) = (r.width(), r.height());
+    let mut mesh = egui::Mesh::default();
+    radial(
+        &mut mesh,
+        r.min + egui::vec2(w * 0.08, -h * 0.10),
+        egui::vec2(w * 0.62, h * 0.85),
+        ACCENT.gamma_multiply(0.11),
+    );
+    radial(
+        &mut mesh,
+        r.min + egui::vec2(w * 1.05, h * 0.10),
+        egui::vec2(w * 0.48, h * 0.75),
+        VIOLET.gamma_multiply(0.14),
+    );
+    radial(
+        &mut mesh,
+        r.min + egui::vec2(w * 0.5, h * 1.2),
+        egui::vec2(w * 0.45, h * 0.6),
+        SKY.gamma_multiply(0.06),
+    );
+    p.add(mesh);
+}
 
 /// Name of the semibold font family registered by [`install_fonts`].
 pub const SEMIBOLD: &str = "semibold";
@@ -140,7 +202,7 @@ pub fn apply(ctx: &egui::Context) {
     let mut v = egui::Visuals::dark();
     v.panel_fill = BG;
     v.window_fill = SURFACE;
-    v.extreme_bg_color = Color32::from_rgb(0x0D, 0x12, 0x1D);
+    v.extreme_bg_color = Color32::from_rgb(0x07, 0x08, 0x0F); // text fields: darker than the glass around them
     v.faint_bg_color = SURFACE_2;
     v.override_text_color = Some(TEXT);
     v.hyperlink_color = ACCENT;

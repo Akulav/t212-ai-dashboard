@@ -16,7 +16,7 @@ No telemetry. No cloud AI. No bloat. One file per system that installs and updat
 ![Linux](https://img.shields.io/badge/Linux-x64-FCC624?style=flat-square&logo=linux&logoColor=black)
 ![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-000000?style=flat-square&logo=apple&logoColor=white)
 ![Rust](https://img.shields.io/badge/made%20with-Rust-B7410E?style=flat-square&logo=rust&logoColor=white)
-![License](https://img.shields.io/badge/license-MIT-5c6270?style=flat-square)
+![License](https://img.shields.io/badge/license-source--available-5c6270?style=flat-square)
 
 ### [⬇ Download the latest release](https://github.com/Akulav/t212-ai-dashboard/releases/latest)
 
@@ -73,7 +73,7 @@ Every release also ships `SHA256SUMS.txt` so you can verify your download.
 <td width="50%" valign="top">
 
 ### 🧠 Local AI analyst
-- **AI Insights:** P/E, PEG, FCF yield, growth, margins and quarterly results (SEC EDGAR) feed a transparent 0–100
+- **AI Insights:** P/E, PEG, FCF yield, growth, margins and quarterly results (SEC EDGAR for US stocks, ESEF/UKSEF annual reports for EU and UK stocks) feed a transparent 0–100
   score and a **buy-opportunity screen**; a local model writes the thesis, risks and recommendations.
 - **Zero-config:** downloads a portable `llama.cpp` build and picks **CUDA / Vulkan / Metal / CPU** for your hardware.
 - **VRAM-aware model recommendations**, one-click GGUF downloads, explicit load / unload.
@@ -250,7 +250,7 @@ Found a vulnerability? Please open a private security advisory on GitHub.
 ## 🙏 Credits
 
 Icons by [Phosphor Icons](https://phosphoricons.com) (MIT). Local inference by [llama.cpp](https://github.com/ggml-org/llama.cpp) (MIT).
-Fundamentals from [SEC EDGAR](https://www.sec.gov/edgar). PDF typesetting by [Typst](https://typst.app) (Apache-2.0).
+Fundamentals from [SEC EDGAR](https://www.sec.gov/edgar) and [filings.xbrl.org](https://filings.xbrl.org) (ESEF/UKSEF), LEIs from [GLEIF](https://www.gleif.org), exchange rates from the ECB via [Frankfurter](https://frankfurter.dev). PDF typesetting by [Typst](https://typst.app) (Apache-2.0).
 
 ---
 
@@ -258,6 +258,6 @@ Fundamentals from [SEC EDGAR](https://www.sec.gov/edgar). PDF typesetting by [Ty
 
 **Made with ❤️ by [Akulav](https://github.com/Akulav)**
 
-<sub>© 2026 Akulav. Released under the <a href="LICENSE">MIT License</a>. Not affiliated with Trading 212. Not financial advice.</sub>
+<sub>© 2026 Akulav. Source-available under the <a href="LICENSE">Akulav Source-Available License</a>. Not affiliated with Trading 212. Not financial advice.</sub>
 
 </div>
