@@ -98,5 +98,9 @@ desktop.ini
 ehthumbs.db
 $RECYCLE.BIN/
 
+# --- Python (tools_dev/ scripts) ---------------------------------------------
+__pycache__/
+*.py[cod]
+
 # --- Claude Code local state -------------------------------------------------
 .claude/settings.local.json
