@@ -3,7 +3,7 @@
 All notable changes to Aura Portfolio. Format: [Keep a Changelog](https://keepachangelog.com),
 versions follow [SemVer](https://semver.org).
 
-## [1.1.0] - 2026-11-12
+## [2.0.0] - 2026-11-13
 
 ### Added
 - **Fundamentals for EU and UK stocks**, free and without a key: AI Insights now reads the companies' annual IFRS
@@ -11,6 +11,13 @@ versions follow [SemVer](https://semver.org).
   margins, ROE, debt/equity, free-cash-flow yield, dividend yield and payout ratio, converted into the quote currency
   with ECB exchange rates (pence for London listings). US stocks still come from SEC EDGAR; the contact email is now
   needed only for them. The setting is now called "Public filings".
+
+### Changed
+- **New look**, in the style of Akulav's Hyve and Lumen: a deep blue-black background with soft glows, the sidebar as a floating glass panel with the app name at the top, glass cards, the current page highlighted with a gradient, softer translucent buttons and a clear accent ring around the focused text field.
+- **License:** from 2.0.0 on, Aura is source-available under the Akulav Source-Available License (versions up to
+  1.1.0 stay MIT).
+
+## [1.1.0] - 2026-11-12
 
 ### Changed
 - **One file per system** that both installs and updates: `AuraPortfolio-setup.exe` (Windows),
@@ -23,9 +30,6 @@ versions follow [SemVer](https://semver.org).
   setup is kept in the app's own `data/downloads` folder, never in `%TEMP%`.
 - Updates are also checked to be a program for this system before anything is replaced.
 - Uninstalling on Windows deletes only Aura's `data` folder when asked, never other files in the install folder.
-- **New look**, in the style of Akulav's Hyve and Lumen: a deep blue-black background with soft glows, the sidebar as a floating glass panel with the app name at the top, glass cards, the current page highlighted with a gradient, softer translucent buttons and a clear accent ring around the focused text field.
-- **License:** from 1.1.0 on, Aura is source-available under the Akulav Source-Available License (versions up to
-  1.0.0 stay MIT).
 
 ### Upgrading from 1.0
 - 1.0 looks for the old file names, so it can't update itself to 1.1: download the file for your system from the
