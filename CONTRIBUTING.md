@@ -126,12 +126,13 @@ flag in `HardwareProfile` if needed, and extend the `select_assets` tests with t
 - **Windows setup**: `installer/aura-portfolio.iss` (Inno Setup 6). Build it after `cargo build --release`:
 
   ```powershell
-  & "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" /DAppVersion=1.0.0 /DExe=$PWD\target\release\aura-portfolio.exe /Odist installer\aura-portfolio.iss
+  & "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" /DAppVersion=1.1.0 /DExe=$PWD\target\release\aura-portfolio.exe installer\aura-portfolio.iss
   ```
 
-  **Never change its AppId.** CI compiles the script against a debug build on every push.
-- **macOS app**: `installer/Info.plist` (release.yml fills in `@VERSION@`, signs ad hoc, packs the `.dmg`).
-- **Self-install / uninstall / updates**: `src/install.rs`, `src/updater.rs` (see CLAUDE.md for how they fit).
+  It writes `dist\AuraPortfolio-setup.exe`. **Never change its AppId.** CI builds the setup on every push.
+- **macOS app**: `installer/Info.plist` is embedded in the program; installing writes `Aura Portfolio.app` around it
+  in the chosen folder (`@VERSION@` filled in, signed ad hoc).
+- **Install / uninstall / updates**: `src/install.rs`, `src/ui/install_window.rs`, `src/updater.rs` (see CLAUDE.md).
 - **Trading212 diagnostics:** `cargo run --example t212_diagnose` (read-only, never prints secrets; `-- sync` runs the
   full sync into a throwaway folder). **Local-AI check:** `cargo run --example llm_check`.
 
@@ -147,6 +148,7 @@ flag in `HardwareProfile` if needed, and extend the `select_assets` tests with t
    Pick the number from the newest tag (`git tag --sort=-v:refname`): patch = fixes, minor = features, major = breaking
    data/config/install-layout changes.
 2. Fill in the CHANGELOG section (it becomes the release notes), run the checks with `--locked`, commit.
-3. Push to `main`. `release.yml` sees `VERSION` change, runs the tests, builds Windows / Linux / macOS (arm64), the
-   setup and the `.dmg`, writes `SHA256SUMS.txt`, tags `vX.Y.Z` and publishes. A version that's already tagged is
-   skipped. Installed copies offer the update within 6 hours.
+3. Push to `main`. `build.yml` lints, tests and builds Windows / Linux / macOS (arm64) and, when no release `vX.Y.Z`
+   exists yet, publishes exactly three files (`AuraPortfolio-setup.exe`, `AuraPortfolio-linux-x64`,
+   `AuraPortfolio-macos-arm64`) plus `SHA256SUMS.txt` and tags the commit. Installed copies offer the update within
+   6 hours.

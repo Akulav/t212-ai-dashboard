@@ -1,19 +1,22 @@
-//! Installing. On Windows the usual way is the setup wizard (`installer/aura-portfolio.iss`: `Aura-Portfolio-Setup.exe`,
-//! with its uninstaller); on a Mac the .dmg's `Aura Portfolio.app`. Besides that the program installs itself: started
-//! from anywhere else (Downloads, the desktop, inside the Mac app) with a desktop session, it copies itself into this
-//! computer's app folder, adds itself to the app list and the desktop, and starts from there:
+//! Installing, updating in place and uninstalling. **One file per system does both install and update**, and the
+//! folder you choose is the only folder Aura writes to:
 //!
-//! | System | App folder | Shortcuts |
+//! | System | Release file | Installs to |
 //! |---|---|---|
-//! | Windows | `%LOCALAPPDATA%\Aura Portfolio` | Start menu + desktop, Settings → Apps entry (Uninstall) |
-//! | Linux | `$XDG_DATA_HOME/aura-portfolio` or `~/.local/share/aura-portfolio` | app menu entry + desktop launcher |
-//! | macOS | `~/Library/Application Support/Aura Portfolio` | the .dmg's app (or one in `~/Applications`) + desktop |
+//! | Windows | `AuraPortfolio-setup.exe` (Inno Setup, `installer/aura-portfolio.iss`) | the folder picked in the wizard (default `%LOCALAPPDATA%\Aura Portfolio`); later setups and in-app updates reuse it |
+//! | Linux | `AuraPortfolio-linux-x64` | a folder you pick (default `~/.local/share/aura-portfolio`) + app-menu entry and desktop launcher |
+//! | macOS | `AuraPortfolio-macos-arm64` | `Aura Portfolio.app` inside a folder you pick (default `~/Applications/Aura Portfolio`) |
 //!
-//! It runs where it is when its folder already is an app folder (`.aura-app`, `.git`, the setup's `unins000.exe`, or a
-//! pre-1.0 portable folder: an install of any version, in any folder, keeps working there), with `--here`, `--dir` or
+//! On Linux/macOS the program, started from anywhere else (Downloads, the desktop), shows a small window that asks
+//! where to install ([`Offer::Install`]), or offers to update an older install ([`Offer::Update`]). A newer or equal
+//! install is simply started ([`Offer::OpenInstalled`]). It runs where it is when its folder already is an app folder
+//! (`.aura-app`, `.git`, the setup's `unins000.exe`, a pre-1.0 portable folder), with `--here`, `--dir` or
 //! `AURA_DATA_DIR`, after an update, without a desktop (Linux), and when it was built here (`cargo`, under `target/`).
-//! An installed program that's newer (it updated itself) is never replaced by an older copy. `--uninstall` runs the
-//! setup's uninstaller, or takes a self-made install out of the app list and deletes the folder only when you say so.
+//!
+//! Everything Aura keeps (settings, cache, models, the llama.cpp runtime, logs, a downloaded update) is in the app
+//! folder's `data/` (see [`crate::paths`]). Outside it there are only the system's own entries for an installed app:
+//! shortcuts and the Apps entry (Windows), the app-menu entry and desktop launcher (Linux), and the Trading212 key in
+//! the OS keychain.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -22,12 +25,14 @@ use crate::updater;
 
 /// Product name (window title, shortcuts, the Apps entry).
 pub const NAME: &str = "Aura Portfolio";
-/// Marker a self-install writes into the app folder.
+/// Marker in every app folder (written by the setup and by a Linux/macOS install).
 pub const MARKER: &str = ".aura-app";
 #[cfg(all(unix, not(target_os = "macos")))]
 const ICON_PNG: &[u8] = include_bytes!("../assets/icon-256.png");
 #[cfg(target_os = "macos")]
 const ICON_ICNS: &[u8] = include_bytes!("../assets/icon.icns");
+#[cfg(target_os = "macos")]
+const INFO_PLIST: &str = include_str!("../installer/Info.plist");
 /// The Windows setup's uninstaller (Inno Setup), in the folder it installed.
 #[cfg(windows)]
 const UNINSTALLER: &str = "unins000.exe";
@@ -48,20 +53,61 @@ fn home() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-/// This computer's app folder for this user.
+/// The folder suggested for a first install.
 pub fn default_dir() -> Option<PathBuf> {
     #[cfg(windows)]
     return std::env::var_os("LOCALAPPDATA")
         .filter(|d| !d.is_empty())
         .map(|d| PathBuf::from(d).join(NAME));
     #[cfg(target_os = "macos")]
-    return home().map(|h| h.join("Library").join("Application Support").join(NAME));
+    return home().map(|h| h.join("Applications").join(NAME));
     #[cfg(all(unix, not(target_os = "macos")))]
-    return std::env::var_os("XDG_DATA_HOME")
+    return xdg_data_home().map(|d| d.join("aura-portfolio"));
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn xdg_data_home() -> Option<PathBuf> {
+    std::env::var_os("XDG_DATA_HOME")
         .filter(|d| !d.is_empty())
         .map(PathBuf::from)
         .or_else(|| home().map(|h| h.join(".local").join("share")))
-        .map(|d| d.join("aura-portfolio"));
+}
+
+/// The app bundle a program runs inside (`X.app/Contents/MacOS/<program>` → `X.app`).
+pub fn bundle_of(exe: &Path) -> Option<PathBuf> {
+    let macos = exe.parent()?;
+    let contents = macos.parent()?;
+    let app = contents.parent()?;
+    (macos.file_name()? == "MacOS"
+        && contents.file_name()? == "Contents"
+        && app.extension().is_some_and(|e| e == "app"))
+    .then(|| app.to_path_buf())
+}
+
+/// The app folder of a program: its own folder, or for a program inside `X.app` the folder that holds `X.app`.
+pub fn root_of_exe(exe: &Path) -> Option<PathBuf> {
+    match bundle_of(exe) {
+        Some(app) => app.parent().map(Path::to_path_buf),
+        None => exe.parent().map(Path::to_path_buf),
+    }
+}
+
+/// The app bundle inside an app folder (macOS installs).
+pub fn bundle_in(root: &Path) -> PathBuf {
+    root.join(format!("{NAME}.app"))
+}
+
+/// The program inside an app folder: in the app bundle on macOS (or loose, as 1.0 installed it), else beside `data/`.
+pub fn installed_program(root: &Path) -> PathBuf {
+    let in_bundle = bundle_in(root)
+        .join("Contents")
+        .join("MacOS")
+        .join(exe_name());
+    if cfg!(target_os = "macos") && (in_bundle.exists() || !root.join(exe_name()).exists()) {
+        in_bundle
+    } else {
+        root.join(exe_name())
+    }
 }
 
 /// A folder the app already lives in (an install of any version, the setup's, a pre-1.0 portable folder, or a
@@ -72,6 +118,7 @@ pub fn is_app_folder(dir: &Path) -> bool {
         .any(|n| dir.join(n).exists())
 }
 
+#[cfg(unix)]
 fn same_place(a: &Path, b: &Path) -> bool {
     match (a.canonicalize(), b.canonicalize()) {
         (Ok(x), Ok(y)) => x == y,
@@ -79,17 +126,125 @@ fn same_place(a: &Path, b: &Path) -> bool {
     }
 }
 
-/// Where to install to, when this start should install; `None` = run where it is.
-pub fn target_for(exe_dir: &Path) -> Option<PathBuf> {
+/// What to do when the program starts outside an app folder (Linux/macOS).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Offer {
+    /// Run where it is.
+    None,
+    /// Not installed yet: ask for a folder (this one is suggested).
+    Install {
+        /// The suggested folder.
+        suggested: PathBuf,
+    },
+    /// An older copy is installed in `root`: offer to update it.
+    Update {
+        /// The installed app folder.
+        root: PathBuf,
+        /// Its version, when it could be asked.
+        installed: Option<String>,
+    },
+    /// The same or a newer version is installed in `root`: just start that one.
+    OpenInstalled {
+        /// The installed app folder.
+        root: PathBuf,
+    },
+}
+
+/// An existing install found on this computer (Linux: from the app-menu entry; macOS: the default folder or 1.0's).
+#[cfg(unix)]
+fn existing_install() -> Option<PathBuf> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
     #[cfg(all(unix, not(target_os = "macos")))]
-    if std::env::var_os("DISPLAY").is_none() && std::env::var_os("WAYLAND_DISPLAY").is_none() {
-        return None; // (no desktop: run where it was put)
+    if let Some(entry) =
+        xdg_data_home().map(|d| d.join("applications").join("aura-portfolio.desktop"))
+        && let Ok(text) = fs::read_to_string(entry)
+        && let Some(exec) = text.lines().find_map(|l| l.strip_prefix("Exec="))
+    {
+        // (undo the quoting of `desktop_entry`: a backslash keeps the next character)
+        let mut exec_path = String::new();
+        let mut chars = exec.trim().trim_matches('"').chars();
+        while let Some(c) = chars.next() {
+            exec_path.push(if c == '\\' {
+                chars.next().unwrap_or(c)
+            } else {
+                c
+            });
+        }
+        if let Some(root) = Path::new(&exec_path).parent() {
+            candidates.push(root.to_path_buf());
+        }
     }
-    if is_app_folder(exe_dir) {
-        return None;
+    candidates.extend(default_dir());
+    #[cfg(target_os = "macos")]
+    candidates.extend(home().map(|h| h.join("Library").join("Application Support").join(NAME)));
+    candidates
+        .into_iter()
+        .find(|r| is_app_folder(r) && installed_program(r).exists())
+}
+
+/// Decides what a start from `exe` (outside an app folder) should do. Windows always runs where it is: the setup
+/// does the installing there.
+pub fn offer_for(exe: &Path) -> Offer {
+    #[cfg(windows)]
+    {
+        let _ = exe;
+        Offer::None
     }
-    let target = default_dir()?;
-    (!same_place(&target, exe_dir)).then_some(target)
+    #[cfg(unix)]
+    {
+        #[cfg(not(target_os = "macos"))]
+        if std::env::var_os("DISPLAY").is_none() && std::env::var_os("WAYLAND_DISPLAY").is_none() {
+            return Offer::None; // (no desktop: run where it was put)
+        }
+        let Some(here) = root_of_exe(exe) else {
+            return Offer::None;
+        };
+        if is_app_folder(&here) {
+            return Offer::None;
+        }
+        match existing_install() {
+            Some(root) if same_place(&root, &here) => Offer::None,
+            Some(root) => {
+                let installed = version_of(&installed_program(&root));
+                if installed
+                    .as_deref()
+                    .is_none_or(|v| updater::newer(crate::VERSION, v))
+                {
+                    Offer::Update { root, installed }
+                } else {
+                    Offer::OpenInstalled { root }
+                }
+            }
+            None => default_dir().map_or(Offer::None, |suggested| Offer::Install { suggested }),
+        }
+    }
+}
+
+/// Checks a folder typed into the install window. `~` is the home folder.
+pub fn parse_dir(text: &str) -> Result<PathBuf, String> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Err("Choose a folder.".into());
+    }
+    #[cfg(unix)]
+    let path = match text.strip_prefix('~') {
+        Some(rest) if rest.is_empty() || rest.starts_with('/') => home()
+            .ok_or("Couldn't find your home folder.")?
+            .join(rest.trim_start_matches('/')),
+        _ => PathBuf::from(text),
+    };
+    #[cfg(not(unix))]
+    let path = PathBuf::from(text);
+    if !path.is_absolute() {
+        return Err("Use a full path, for example ~/Apps/Aura Portfolio.".into());
+    }
+    if path.parent().is_none() {
+        return Err("Pick a folder, not the root of a drive.".into());
+    }
+    if path.is_file() {
+        return Err("That's a file, not a folder.".into());
+    }
+    Ok(path)
 }
 
 /// Is the program in `dir` running (it holds `data/.aura.lock`)?
@@ -208,19 +363,19 @@ pub fn show_running() {
     notice(&format!("{NAME} is already open."));
 }
 
-/// Copies this program into `target` (unless the same or a newer one is there), adds it to the app list and the
-/// desktop, and starts it there, detached. `Ok(true)` = the installed one runs (this one ends).
-pub fn install_and_start(exe: &Path, target: &Path, args: &[String]) -> Result<bool, String> {
+/// Copies this program into the app folder `target` (unless the same or a newer one is there), makes the macOS app
+/// bundle or the Linux menu entry, and starts the installed program, detached. `Ok(())` = it runs (this one ends).
+pub fn install_and_start(exe: &Path, target: &Path, args: &[String]) -> Result<(), String> {
     let this = crate::VERSION;
     fs::create_dir_all(target).map_err(|e| format!("couldn't make {}: {e}", target.display()))?;
-    let installed = target.join(exe_name());
+    let installed = installed_program(target);
     let first = !installed.exists();
     let same = !first
         && fs::read(&installed)
             .ok()
             .zip(fs::read(exe).ok())
             .is_some_and(|(a, b)| a == b);
-    // (the installed one may have updated itself since: an older copy - the Mac app, an old download - only starts it)
+    // (the installed one may have updated itself since: an older copy only starts it)
     let replace =
         !first && !same && version_of(&installed).is_none_or(|v| updater::newer(this, &v));
     if running_in(target) {
@@ -232,9 +387,12 @@ pub fn install_and_start(exe: &Path, target: &Path, args: &[String]) -> Result<b
         } else {
             show_running();
         }
-        return Ok(true);
+        return Ok(());
     }
     if first || replace {
+        if let Some(p) = installed.parent() {
+            fs::create_dir_all(p).map_err(|e| format!("couldn't make {}: {e}", p.display()))?;
+        }
         let new = updater::sibling(&installed, "new");
         fs::copy(exe, &new)
             .map_err(|e| format!("couldn't copy the program to {}: {e}", target.display()))?;
@@ -245,16 +403,35 @@ pub fn install_and_start(exe: &Path, target: &Path, args: &[String]) -> Result<b
             fs::rename(&new, &installed)
                 .map_err(|e| format!("couldn't put the program in place: {e}"))?;
         }
-        let _ = fs::write(
-            target.join(MARKER),
-            format!("{NAME} app folder (self-installed {this})\n"),
-        );
+        let _ = fs::write(target.join(MARKER), format!("{this}\n"));
         tracing::info!("installed the program ({this}) into {}", target.display());
-        if let Err(e) = add_to_system(&installed, target, exe) {
+        if let Err(e) = add_to_system(&installed, target) {
             tracing::warn!("couldn't add {NAME} to the app list: {e}");
         }
     }
-    let mut cmd = std::process::Command::new(&installed);
+    start_installed(target, args)
+}
+
+/// Starts the program installed in `target`, detached from this process and its terminal.
+pub fn start_installed(target: &Path, args: &[String]) -> Result<(), String> {
+    let program = installed_program(target);
+    #[cfg(target_os = "macos")]
+    let mut cmd = {
+        // (through the app bundle, so the Dock shows its icon and name)
+        let mut c = std::process::Command::new("/usr/bin/open");
+        match bundle_of(&program) {
+            Some(app) => {
+                c.arg("-n").arg(app);
+                if !args.is_empty() {
+                    c.arg("--args");
+                }
+            }
+            None => c = std::process::Command::new(&program),
+        }
+        c
+    };
+    #[cfg(not(target_os = "macos"))]
+    let mut cmd = std::process::Command::new(&program);
     cmd.args(args)
         .current_dir(target)
         .stdin(std::process::Stdio::null())
@@ -276,15 +453,8 @@ pub fn install_and_start(exe: &Path, target: &Path, args: &[String]) -> Result<b
         });
     }
     cmd.spawn()
-        .map_err(|e| format!("couldn't start the installed program: {e}"))?;
-    if first && !from_mac_app(exe) {
-        notice(&format!(
-            "{NAME} is installed in {}\nand starting now. It's on your desktop and in your app list too.\n\n\
-             You can delete the file you downloaded.",
-            target.display()
-        ));
-    }
-    Ok(true)
+        .map(|_| ())
+        .map_err(|e| format!("couldn't start the installed program: {e}"))
 }
 
 /// A copied program ready to run: executable on Unix, and on macOS without the download's quarantine mark.
@@ -304,221 +474,49 @@ fn prepare_program(p: &Path) {
     let _ = p;
 }
 
-/// The Mac app (`X.app/Contents/MacOS/<program>`) this program is inside, when it's an installed one (not on the
-/// .dmg itself, under `/Volumes`).
-fn mac_app(exe: &Path) -> Option<PathBuf> {
-    let app = exe.parent()?.parent()?.parent()?;
-    let is_app =
-        app.extension().is_some_and(|e| e == "app") && exe.parent()?.ends_with("Contents/MacOS");
-    (is_app && !app.starts_with("/Volumes")).then(|| app.to_path_buf())
-}
-
-fn from_mac_app(exe: &Path) -> bool {
-    cfg!(target_os = "macos") && mac_app(exe).is_some()
-}
-
-/// (At every start in an app folder.) Keeps the Apps entry at the version an update brought (Windows; only an entry
-/// that's there — the setup's or a self-made install's — is touched, none is ever created).
-pub fn refresh(dir: &Path) {
-    #[cfg(windows)]
-    {
-        if dir.join(UNINSTALLER).exists() {
-            registry::set_version(registry::SETUP_KEY);
-        } else if default_dir().is_some_and(|d| same_place(&d, dir)) {
-            registry::set_version(registry::KEY);
-        }
-    }
-    let _ = dir;
+/// Ad-hoc signs an app bundle (no certificate: macOS asks once, then remembers).
+#[cfg(target_os = "macos")]
+pub fn sign_bundle(app: &Path) {
+    let _ = std::process::Command::new("/usr/bin/codesign")
+        .args(["--force", "--deep", "-s", "-"])
+        .arg(app)
+        .stderr(std::process::Stdio::null())
+        .status();
 }
 
 // ------------------------------------------------------------------ the app list and the desktop, per system
 
 #[cfg(windows)]
-fn start_menu_link() -> Option<PathBuf> {
-    std::env::var_os("APPDATA").map(|d| {
-        PathBuf::from(d)
-            .join("Microsoft")
-            .join("Windows")
-            .join("Start Menu")
-            .join("Programs")
-            .join(format!("{NAME}.lnk"))
-    })
+fn add_to_system(_exe: &Path, _dir: &Path) -> Result<(), String> {
+    Ok(()) // (the setup makes the shortcuts and the Apps entry)
 }
 
-/// Runs a PowerShell line hidden, with values passed through the environment (no quoting to get wrong).
-#[cfg(windows)]
-fn powershell(script: &str, env: &[(&str, &std::ffi::OsStr)]) -> bool {
-    let mut cmd = std::process::Command::new("powershell");
-    cmd.args([
-        "-NoProfile",
-        "-NonInteractive",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        script,
-    ])
-    .stdin(std::process::Stdio::null())
-    .stdout(std::process::Stdio::null())
-    .stderr(std::process::Stdio::null());
-    for (k, v) in env {
-        cmd.env(k, v);
-    }
-    quiet(&mut cmd)
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-}
-
-#[cfg(windows)]
-fn add_to_system(exe: &Path, dir: &Path, _source: &Path) -> Result<(), String> {
-    registry::write(exe, dir)?;
-    let link = start_menu_link().ok_or("no APPDATA folder")?;
-    if let Some(p) = link.parent() {
-        fs::create_dir_all(p).map_err(|e| e.to_string())?;
-    }
-    // (a .lnk is a COM object: PowerShell's WScript.Shell writes it - in the Start menu and on the desktop)
-    let script = "$w = New-Object -ComObject WScript.Shell; \
-                  $desk = Join-Path ([Environment]::GetFolderPath('Desktop')) ($env:AURA_NAME + '.lnk'); \
-                  foreach ($l in @($env:AURA_LINK, $desk)) { $s = $w.CreateShortcut($l); \
-                  $s.TargetPath = $env:AURA_EXE; $s.WorkingDirectory = $env:AURA_DIR; \
-                  $s.IconLocation = $env:AURA_EXE + ',0'; \
-                  $s.Description = 'Trading212 portfolio analytics with a local AI analyst'; $s.Save() }";
-    let ok = powershell(
-        script,
-        &[
-            ("AURA_NAME", std::ffi::OsStr::new(NAME)),
-            ("AURA_LINK", link.as_os_str()),
-            ("AURA_EXE", exe.as_os_str()),
-            ("AURA_DIR", dir.as_os_str()),
-        ],
-    );
-    if ok && link.exists() {
-        Ok(())
-    } else {
-        Err("the shortcuts weren't made".into())
-    }
-}
-
+/// 1.0 could install itself without the setup: its Start-menu and desktop shortcuts and its own Apps entry.
 #[cfg(windows)]
 fn remove_from_system() {
-    if let Some(l) = start_menu_link() {
-        let _ = fs::remove_file(l);
+    if let Some(d) = std::env::var_os("APPDATA") {
+        let link = PathBuf::from(d)
+            .join(r"Microsoft\Windows\Start Menu\Programs")
+            .join(format!("{NAME}.lnk"));
+        let _ = fs::remove_file(link);
     }
-    powershell(
-        "Remove-Item -LiteralPath (Join-Path ([Environment]::GetFolderPath('Desktop')) ($env:AURA_NAME + '.lnk')) \
-         -ErrorAction SilentlyContinue",
-        &[("AURA_NAME", std::ffi::OsStr::new(NAME))],
-    );
-    registry::remove();
-}
-
-#[cfg(windows)]
-mod registry {
-    //! Settings → Apps lists programs from `HKCU\…\Uninstall\<key>`: name, version, icon, folder, how to uninstall.
-    use std::path::Path;
-
-    use windows_sys::Win32::System::Registry::{
-        HKEY, HKEY_CURRENT_USER, KEY_SET_VALUE, REG_DWORD, REG_SZ, RegCloseKey, RegDeleteTreeW,
-        RegOpenKeyExW, RegSetKeyValueW, RegSetValueExW,
-    };
-
-    const ROOT: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\";
-    /// A self-made install's entry (written here; the setup removes it when it takes over the folder).
-    pub const KEY: &str = "Aura Portfolio";
-    /// The setup's entry: Inno Setup names it after the AppId in installer/aura-portfolio.iss (never change it).
-    pub const SETUP_KEY: &str = "{6208BE64-B4D0-4EDB-BF3A-510EE88F9FB5}_is1";
-
-    fn set_sz(key: &[u16], name: &str, value: &str) -> u32 {
-        let (n, v) = (super::wide(name), super::wide(value));
-        // SAFETY: valid NUL-terminated wide strings; the byte length covers the terminator.
-        unsafe {
-            RegSetKeyValueW(
-                HKEY_CURRENT_USER,
-                key.as_ptr(),
-                n.as_ptr(),
-                REG_SZ,
-                v.as_ptr().cast(),
-                (v.len() * 2) as u32,
-            )
-        }
+    if let Some(p) = std::env::var_os("USERPROFILE") {
+        let _ = fs::remove_file(PathBuf::from(p).join("Desktop").join(format!("{NAME}.lnk")));
     }
-
-    pub fn write(exe: &Path, dir: &Path) -> Result<(), String> {
-        let exe_s = exe.to_string_lossy();
-        let key = super::wide(&format!("{ROOT}{KEY}"));
-        for (name, value) in [
-            ("DisplayName", super::NAME.to_string()),
-            ("DisplayVersion", crate::VERSION.to_string()),
-            ("DisplayIcon", format!("{exe_s},0")),
-            ("Publisher", "Akulav".to_string()),
-            ("InstallLocation", dir.to_string_lossy().to_string()),
-            ("UninstallString", format!("\"{exe_s}\" --uninstall")),
-            (
-                "URLInfoAbout",
-                "https://github.com/Akulav/t212-ai-dashboard".to_string(),
-            ),
-        ] {
-            let rc = set_sz(&key, name, &value);
-            if rc != 0 {
-                return Err(format!("registry error {rc} writing {name}"));
-            }
-        }
-        for name in ["NoModify", "NoRepair"] {
-            let (n, one) = (super::wide(name), 1u32);
-            // SAFETY: a DWORD value of 4 bytes.
-            unsafe {
-                RegSetKeyValueW(
-                    HKEY_CURRENT_USER,
-                    key.as_ptr(),
-                    n.as_ptr(),
-                    REG_DWORD,
-                    (&one as *const u32).cast(),
-                    4,
-                );
-            }
-        }
-        Ok(())
-    }
-
-    /// Sets DisplayVersion of an entry that exists (never makes one).
-    pub fn set_version(which: &str) {
-        let key = super::wide(&format!("{ROOT}{which}"));
-        let mut h: HKEY = std::ptr::null_mut();
-        // SAFETY: the key is opened, written and closed here; failures leave it untouched.
-        unsafe {
-            if RegOpenKeyExW(HKEY_CURRENT_USER, key.as_ptr(), 0, KEY_SET_VALUE, &mut h) != 0 {
-                return;
-            }
-            let (n, v) = (super::wide("DisplayVersion"), super::wide(crate::VERSION));
-            RegSetValueExW(
-                h,
-                n.as_ptr(),
-                0,
-                REG_SZ,
-                v.as_ptr().cast(),
-                (v.len() * 2) as u32,
-            );
-            RegCloseKey(h);
-        }
-    }
-
-    pub fn remove() {
-        let key = super::wide(&format!("{ROOT}{KEY}"));
-        // SAFETY: deleting our own key; a missing key is fine.
-        unsafe {
-            RegDeleteTreeW(HKEY_CURRENT_USER, key.as_ptr());
-        }
+    let key = wide(r"Software\Microsoft\Windows\CurrentVersion\Uninstall\Aura Portfolio");
+    // SAFETY: deleting our own key; a missing key is fine.
+    unsafe {
+        windows_sys::Win32::System::Registry::RegDeleteTreeW(
+            windows_sys::Win32::System::Registry::HKEY_CURRENT_USER,
+            key.as_ptr(),
+        );
     }
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
 fn shortcut_paths() -> Vec<PathBuf> {
     let mut out = Vec::new();
-    let data = std::env::var_os("XDG_DATA_HOME")
-        .filter(|d| !d.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| home().map(|h| h.join(".local").join("share")));
-    if let Some(d) = data {
+    if let Some(d) = xdg_data_home() {
         out.push(d.join("applications").join("aura-portfolio.desktop"));
     }
     // the desktop folder: where xdg-user-dir says (it's localised), else ~/Desktop
@@ -535,26 +533,35 @@ fn shortcut_paths() -> Vec<PathBuf> {
     out
 }
 
+/// The `.desktop` entry for the program at `exe` in the app folder `dir` (icon kept in the app folder).
 #[cfg(all(unix, not(target_os = "macos")))]
-fn add_to_system(exe: &Path, dir: &Path, _source: &Path) -> Result<(), String> {
-    use std::os::unix::fs::PermissionsExt;
-    let icon = dir.join("aura-portfolio.png");
-    fs::write(&icon, ICON_PNG).map_err(|e| e.to_string())?;
+fn desktop_entry(exe: &Path, dir: &Path) -> String {
     let q = |p: &Path| {
-        format!(
-            "\"{}\"",
-            p.to_string_lossy()
-                .replace('\\', "\\\\")
-                .replace('"', "\\\"")
-        )
+        let mut out = String::from("\"");
+        for c in p.to_string_lossy().chars() {
+            if matches!(c, '"' | '`' | '$' | '\\') {
+                out.push('\\');
+            }
+            out.push(c);
+        }
+        out.push('"');
+        out
     };
-    let entry = format!(
-        "[Desktop Entry]\nType=Application\nName={NAME}\nComment=Trading212 portfolio analytics with a local AI \
-         analyst\nExec={}\nPath={}\nIcon={}\nTerminal=false\nCategories=Office;Finance;\n",
+    format!(
+        "[Desktop Entry]\nType=Application\nName={NAME}\nGenericName=Portfolio dashboard\nComment=Trading212 \
+         portfolio analytics with a local AI analyst - made by Akulav\nExec={}\nPath={}\nIcon={}\nTerminal=false\n\
+         Categories=Office;Finance;\nStartupWMClass=aura-portfolio\n",
         q(exe),
         dir.display(),
-        icon.display()
-    );
+        dir.join("aura-portfolio.png").display()
+    )
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn add_to_system(exe: &Path, dir: &Path) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::write(dir.join("aura-portfolio.png"), ICON_PNG).map_err(|e| e.to_string())?;
+    let entry = desktop_entry(exe, dir);
     for path in shortcut_paths() {
         if let Some(p) = path.parent() {
             fs::create_dir_all(p).map_err(|e| e.to_string())?;
@@ -579,76 +586,33 @@ fn remove_from_system() {
     }
 }
 
+/// The app bundle around the program already copied into `<folder>/Aura Portfolio.app/Contents/MacOS`.
 #[cfg(target_os = "macos")]
-fn wrapper_app() -> Option<PathBuf> {
-    home().map(|h| h.join("Applications").join(format!("{NAME}.app")))
-}
-
-#[cfg(target_os = "macos")]
-fn desktop_link() -> Option<PathBuf> {
-    home().map(|h| h.join("Desktop").join(format!("{NAME}.app")))
-}
-
-#[cfg(target_os = "macos")]
-fn add_to_system(exe: &Path, _dir: &Path, source: &Path) -> Result<(), String> {
-    // started from the .dmg's app (copied to /Applications): that's the app to show; else a small one in
-    // ~/Applications that starts the installed program (Launchpad, Spotlight, the Dock)
-    let app = match mac_app(source) {
-        Some(a) => a,
-        None => make_wrapper_app(exe)?,
+fn add_to_system(exe: &Path, _dir: &Path) -> Result<(), String> {
+    let Some(app) = bundle_of(exe) else {
+        return Ok(()); // (a 1.0 install keeps its loose program)
     };
-    if let Some(link) = desktop_link() {
-        let _ = fs::remove_file(&link);
-        std::os::unix::fs::symlink(&app, &link).map_err(|e| e.to_string())?;
-    }
+    let contents = app.join("Contents");
+    fs::create_dir_all(contents.join("Resources")).map_err(|e| e.to_string())?;
+    fs::write(contents.join("Resources").join("icon.icns"), ICON_ICNS)
+        .map_err(|e| e.to_string())?;
+    let plist = INFO_PLIST.replace("@VERSION@", crate::VERSION);
+    fs::write(contents.join("Info.plist"), plist).map_err(|e| e.to_string())?;
+    sign_bundle(&app);
     Ok(())
 }
 
-#[cfg(target_os = "macos")]
-fn make_wrapper_app(exe: &Path) -> Result<PathBuf, String> {
-    let app = wrapper_app().ok_or("no home folder")?;
-    let contents = app.join("Contents");
-    let err = |e: std::io::Error| e.to_string();
-    fs::create_dir_all(contents.join("MacOS")).map_err(err)?;
-    fs::create_dir_all(contents.join("Resources")).map_err(err)?;
-    let plist = format!(
-        r#"<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-<key>CFBundleName</key><string>{NAME}</string>
-<key>CFBundleDisplayName</key><string>{NAME}</string>
-<key>CFBundleIdentifier</key><string>com.akulav.aura-portfolio.launcher</string>
-<key>CFBundleVersion</key><string>{v}</string>
-<key>CFBundleShortVersionString</key><string>{v}</string>
-<key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleExecutable</key><string>aura-portfolio</string>
-<key>CFBundleIconFile</key><string>icon</string>
-</dict></plist>
-"#,
-        v = crate::VERSION
-    );
-    fs::write(contents.join("Info.plist"), plist).map_err(err)?;
-    fs::write(contents.join("Resources").join("icon.icns"), ICON_ICNS).map_err(err)?;
-    let launcher = contents.join("MacOS").join("aura-portfolio");
-    let quoted = exe.to_string_lossy().replace('\'', r"'\''");
-    fs::write(&launcher, format!("#!/bin/sh\nexec '{quoted}' \"$@\"\n")).map_err(err)?;
-    use std::os::unix::fs::PermissionsExt;
-    fs::set_permissions(&launcher, fs::Permissions::from_mode(0o755)).map_err(err)?;
-    Ok(app)
-}
-
+/// 1.0 made a small launcher app in `~/Applications` and a desktop link.
 #[cfg(target_os = "macos")]
 fn remove_from_system() {
-    if let Some(p) = wrapper_app() {
-        let _ = fs::remove_dir_all(p);
-    }
-    if let Some(p) = desktop_link() {
-        let _ = fs::remove_file(p);
+    if let Some(h) = home() {
+        let _ = fs::remove_dir_all(h.join("Applications").join(format!("{NAME}.app")));
+        let _ = fs::remove_file(h.join("Desktop").join(format!("{NAME}.app")));
     }
 }
 
-/// `aura-portfolio --uninstall`: the setup's uninstaller when the setup installed it; otherwise out of the app list
-/// and off the desktop, and the folder only when the person says so.
+/// `aura-portfolio --uninstall`: the setup's uninstaller when the setup installed it; otherwise the program and its
+/// menu entries go, and the folder with your data only when you say so.
 pub fn uninstall(dir: &Path) {
     #[cfg(windows)]
     if dir.join(UNINSTALLER).exists() {
@@ -662,12 +626,15 @@ pub fn uninstall(dir: &Path) {
         return;
     }
     remove_from_system();
-    tracing::info!("uninstalled: removed from the app list and the desktop");
+    #[cfg(target_os = "macos")]
+    let _ = fs::remove_dir_all(bundle_in(dir));
+    let _ = fs::remove_file(dir.join(MARKER));
+    tracing::info!("uninstalled: removed the program's menu entries");
     let wipe = ask(&format!(
-        "{NAME} is removed from your app list and desktop.\n\nAlso delete its folder {}?\nThat deletes your settings, \
-         the cached portfolio history, insights, the downloaded AI models and the llama.cpp runtime for good.\n(Your \
-         Trading212 API key is in the system keychain, not in this folder.)\n\nNo keeps the folder: starting the \
-         program in it again brings everything back.",
+        "{NAME} is uninstalled.\n\nAlso delete its folder {}?\nThat deletes your settings, the cached portfolio \
+         history, insights, the downloaded AI models and the llama.cpp runtime for good.\n(Your Trading212 API key is \
+         in the system keychain, not in this folder.)\n\nNo keeps the folder: installing into it again brings \
+         everything back.",
         dir.display()
     ));
     if !wipe {
@@ -695,31 +662,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn an_app_folder_runs_where_it_is_and_others_install() {
+    fn an_app_folder_is_recognised_by_its_markers() {
         let dir = std::env::temp_dir().join(format!("aura-setup-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         assert!(!is_app_folder(&dir));
-        let target = target_for(&dir);
-        #[cfg(not(all(unix, not(target_os = "macos"))))]
-        assert_eq!(
-            target,
-            default_dir(),
-            "a plain folder (Downloads) installs into the app folder"
-        );
-        let _ = target;
         for marker in [MARKER, "unins000.exe", "portable"] {
             fs::write(dir.join(marker), b"x").unwrap();
-            assert!(is_app_folder(&dir));
-            assert_eq!(
-                target_for(&dir),
-                None,
-                "an existing install ({marker}) runs where it is"
-            );
+            assert!(is_app_folder(&dir), "{marker}");
             fs::remove_file(dir.join(marker)).unwrap();
         }
         assert!(!running_in(&dir));
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn windows_never_installs_itself() {
+        if cfg!(windows) {
+            assert_eq!(
+                offer_for(Path::new(r"C:\Users\me\Downloads\aura-portfolio.exe")),
+                Offer::None
+            );
+        }
     }
 
     #[test]
@@ -740,22 +704,55 @@ mod tests {
     }
 
     #[test]
-    fn the_mac_app_is_found_from_its_program() {
-        assert_eq!(
-            mac_app(Path::new(
-                "/Applications/Aura Portfolio.app/Contents/MacOS/aura-portfolio"
-            )),
-            Some(PathBuf::from("/Applications/Aura Portfolio.app"))
+    fn the_app_folder_of_a_bundled_program_holds_the_bundle() {
+        let p = |s: &str| PathBuf::from(s);
+        let exe = p(
+            "/Users/me/Applications/Aura Portfolio/Aura Portfolio.app/Contents/MacOS/aura-portfolio",
         );
         assert_eq!(
-            mac_app(Path::new(
-                "/Volumes/Aura Portfolio/Aura Portfolio.app/Contents/MacOS/aura-portfolio"
-            )),
-            None
+            bundle_of(&exe),
+            Some(p(
+                "/Users/me/Applications/Aura Portfolio/Aura Portfolio.app"
+            ))
         );
         assert_eq!(
-            mac_app(Path::new("/Users/me/Downloads/aura-portfolio")),
-            None
+            root_of_exe(&exe),
+            Some(p("/Users/me/Applications/Aura Portfolio"))
         );
+        assert_eq!(
+            bundle_of(&p("/x/MacOS/aura-portfolio")),
+            None,
+            "not a bundle"
+        );
+        assert_eq!(
+            root_of_exe(&p("/opt/aura/aura-portfolio")),
+            Some(p("/opt/aura"))
+        );
+    }
+
+    #[test]
+    fn typed_folders_are_checked() {
+        assert!(parse_dir("").is_err());
+        assert!(parse_dir("relative/dir").is_err());
+        if cfg!(unix) {
+            assert!(parse_dir("/").is_err());
+            assert!(parse_dir("~/Apps/Aura").unwrap().ends_with("Apps/Aura"));
+        } else {
+            assert!(parse_dir(r"C:\").is_err());
+            assert_eq!(
+                parse_dir(r" D:\Apps\Aura ").unwrap(),
+                PathBuf::from(r"D:\Apps\Aura")
+            );
+        }
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    #[test]
+    fn desktop_entry_quotes_exec() {
+        let e = desktop_entry(
+            Path::new("/home/a b/$x/aura-portfolio"),
+            Path::new("/home/a b/$x"),
+        );
+        assert!(e.contains(r#"Exec="/home/a b/\$x/aura-portfolio""#), "{e}");
     }
 }

@@ -3,6 +3,24 @@
 All notable changes to Aura Portfolio. Format: [Keep a Changelog](https://keepachangelog.com),
 versions follow [SemVer](https://semver.org).
 
+## [1.1.0] - 2026-11-12
+
+### Changed
+- **One file per system** that both installs and updates: `AuraPortfolio-setup.exe` (Windows),
+  `AuraPortfolio-linux-x64` (Linux) and `AuraPortfolio-macos-arm64` (macOS Apple Silicon), plus `SHA256SUMS.txt`.
+  The bare Windows program, the `.dmg` and the 0.2.x bridge archives are no longer published.
+- **You choose the install folder.** Linux and macOS now ask where to install (or offer to update the install that's
+  there) instead of always using a fixed folder; on macOS `Aura Portfolio.app` is created inside that folder. The
+  Windows setup asks once and later updates reuse the folder.
+- **Windows updates run the setup** silently in update mode, into the same folder, then restart Aura. The downloaded
+  setup is kept in the app's own `data/downloads` folder, never in `%TEMP%`.
+- Updates are also checked to be a program for this system before anything is replaced.
+- Uninstalling on Windows deletes only Aura's `data` folder when asked, never other files in the install folder.
+
+### Upgrading from 1.0
+- 1.0 looks for the old file names, so it can't update itself to 1.1: download the file for your system from the
+  release page once and run it. It finds your existing install and keeps all your data.
+
 ## [1.0.0] - 2026-11-06
 
 - 

@@ -2,9 +2,9 @@
 
 Native Rust desktop app (egui/eframe window app) for Trading212 portfolio analytics with a local `llama.cpp` AI
 analyst. App name **Aura Portfolio**, program `aura-portfolio` (`aura-portfolio.exe`), publisher **Akulav**, repo
-`Akulav/t212-ai-dashboard` (public). Releases: Windows x64 (+ `Aura-Portfolio-Setup.exe`, Inno Setup), Linux x64,
-macOS Apple Silicon (+ `Aura-Portfolio-macos-arm64.dmg`). The bare programs stay release assets: installed copies
-update themselves from them (`updater::asset_name`).
+`Akulav/t212-ai-dashboard` (public). Every release has exactly one file per system, which both installs and updates:
+`AuraPortfolio-setup.exe` (Windows x64, Inno Setup), `AuraPortfolio-linux-x64`, `AuraPortfolio-macos-arm64`, plus
+`SHA256SUMS.txt` (`updater::asset_name`). One workflow, `.github/workflows/build.yml`, lints/tests/builds and releases.
 
 ## Always bump the version and commit (every change that ships, no exceptions)
 
@@ -34,8 +34,10 @@ If a task truly doesn't change what ships (e.g. comments in a non-shipped file),
 
 - **Never change the setup's AppId** `{6208BE64-B4D0-4EDB-BF3A-510EE88F9FB5}` (`installer/aura-portfolio.iss`, and
   `install::registry::SETUP_KEY`): upgrades and the uninstaller find the install by it.
-- Never rename the release assets (`aura-portfolio-windows-x64.exe`, `-linux-x64`, `-macos-arm64`, `SHA256SUMS.txt`):
-  installed copies look for exactly these names.
+- Never rename the release assets (`AuraPortfolio-setup.exe`, `AuraPortfolio-linux-x64`, `AuraPortfolio-macos-arm64`,
+  `SHA256SUMS.txt`) and never add more: installed copies look for exactly these names.
+- Never write outside the install folder the user chose (everything goes in `<folder>/data`); the only exceptions are
+  the system's own app entries (shortcuts, Apps entry, Linux menu entry) and the keychain.
 - Never log or print API keys; trading stays read-only unless enabled per session (`T212Client::mutating()`).
 - Never commit real portfolio data: screenshots and fixtures use demo/synthetic data only.
 - Never test install/uninstall against the real `%LOCALAPPDATA%\Aura Portfolio`: point `LOCALAPPDATA`/`APPDATA` at a
@@ -50,7 +52,7 @@ If a task truly doesn't change what ships (e.g. comments in a non-shipped file),
 | Open a page directly | `AURA_PAGE=dashboard\|holdings\|dividends\|insights\|ai\|settings` |
 | Bump the version | `python tools_dev/bump_version.py X.Y.Z` |
 | Redraw all icons from `assets/icon.svg` | `python tools_dev/make_icons.py` (Pillow) — commit the outputs |
-| Windows setup | `cargo build --release; & "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" /DAppVersion=X.Y.Z /DExe=$PWD\target\release\aura-portfolio.exe /Odist installer\aura-portfolio.iss` |
+| Windows setup | `cargo build --release; & "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" /DAppVersion=X.Y.Z /DExe=$PWD\target\release\aura-portfolio.exe installer\aura-portfolio.iss` (→ `dist\AuraPortfolio-setup.exe`) |
 | Screenshots (Windows) | `powershell -ExecutionPolicy Bypass -File scripts\screenshots.ps1 -Release` |
 | Trading212 check (read-only) | `cargo run --example t212_diagnose` (`-- sync` for a full sync) |
 | Local AI check | `cargo run --example llm_check` |
@@ -61,23 +63,24 @@ internal).
 
 ## Install, update, uninstall (how it fits together)
 
-- **App folder** = program + `data/` (settings, cache, insights, models, runtime, logs): Windows
+- **App folder** = the folder the user chose: program (macOS: `Aura Portfolio.app` holding it) + `data/` (settings,
+  cache, insights, models, runtime, logs, downloads). Suggested defaults (`install::default_dir`): Windows
   `%LOCALAPPDATA%\Aura Portfolio`, Linux `$XDG_DATA_HOME|~/.local/share/aura-portfolio`, macOS
-  `~/Library/Application Support/Aura Portfolio` (`install::default_dir`, `paths::AppPaths::for_app`). Pre-1.0 data
+  `~/Applications/Aura Portfolio`. `install::root_of_exe` maps a bundled program to its folder. Pre-1.0 data
   (`…/akulav/AuraPortfolio`) is moved in once (`paths::move_legacy_data`); legacy portable `aura-data/` keeps working.
-- **Self-install** (`install.rs`): outside an app folder (markers `.aura-app`, `.git`, `unins000.exe`, `portable`,
-  `aura-data`) with a desktop, the program copies itself there, adds shortcuts + Apps entry, starts detached and exits.
-  Opt-outs: `--here`, `--dir`, `AURA_DATA_DIR`, `--after-update`, `target/` builds, Linux without DISPLAY/WAYLAND.
-  Never downgrades (asks the installed copy `--version`).
+- **Windows install/update**: only the Inno setup (`DisableDirPage=auto` + `UsePreviousAppDir`: asks once). It writes
+  the `.aura-app` marker and starts the app with `--after-update` when run with `/UPDATE`.
+- **Linux/macOS install** (`install.rs` + `ui/install_window.rs`): outside an app folder (markers `.aura-app`, `.git`,
+  `unins000.exe`, `portable`, `aura-data`) with a desktop, a small window asks for the folder (or offers to update the
+  install found via the Linux menu entry / default folder); then copy, menu entry or app bundle, start detached, exit.
+  "Just run it" restarts the program with `--here`. Opt-outs: `--here`, `--dir`, `AURA_DATA_DIR`, `--after-update`,
+  `target/` builds, Linux without DISPLAY/WAYLAND. Never downgrades (asks the installed copy `--version`).
 - **One instance per app folder**: `data/.aura.lock` (`File::try_lock`); a second start brings the window forward.
-- **Apps entry**: the setup's `{AppId}_is1`, or the self-made `Aura Portfolio` key; `install::refresh` updates
-  DisplayVersion of whichever exists at every start — never creates a second one. The setup deletes the self-made /
-  0.2-NSIS key when it takes over a folder.
-- **Updates** (`updater.rs`): a minute after start + every 6 h + "Check for updates"; bare asset → SHA256SUMS.txt →
-  rename to `.old` → swap → restart with `--after-update`. `target/` builds never update.
-- **Uninstall**: Inno uninstaller (stops `{app}\aura-portfolio.exe`, asks before `DelTree`), or `--uninstall`.
-- **Transition**: release.yml also publishes bridge archives (`aura-portfolio-v<V>-<triple>.zip/.tar.gz` + `.sha256`)
-  so 0.2.x updaters can reach 1.x. Remove that step after 1.1.
+- **Updates** (`updater.rs`): a minute after start + every 6 h + "Check for updates"; asset → SHA256SUMS.txt + magic
+  bytes → Windows: setup saved to `data/downloads`, run `/VERYSILENT /UPDATE /DIR=<folder>`; Linux/macOS: rename to
+  `.old` → swap → (re-sign the bundle) → restart with `--after-update`. `target/` builds never update.
+- **Uninstall**: Inno uninstaller (stops `{app}\aura-portfolio.exe`, asks before deleting `{app}\data`), or
+  `--uninstall` (removes menu entries / the bundle, asks before deleting the folder).
 
 ## Quality rules
 

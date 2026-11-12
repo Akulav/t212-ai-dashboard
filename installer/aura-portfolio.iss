@@ -1,12 +1,9 @@
-; Aura Portfolio's Windows setup (Inno Setup 6): the full wizard - Welcome, License, Folder, Shortcuts, Install,
-; Finish (with "Launch Aura Portfolio") - per user, no administrator rights, and its uninstaller (Settings -> Apps and
-; the Start menu). The release workflow builds it:
-;
-;   iscc /DAppVersion=1.0.0 /DExe=<path>\aura-portfolio.exe /O<out dir> installer\aura-portfolio.iss
-;
-; It installs only the program. Its data (settings, portfolio cache, models, the llama.cpp runtime) lives in the
-; data folder next to it, {app}\data, and survives upgrades. The program keeps itself up to date afterwards
-; (src/updater.rs), and src/install.rs keeps this setup's Apps entry at the version an update brought.
+; Aura Portfolio - Inno Setup script. Made by Akulav.
+; One file installs the app the first time and updates it later:
+;   * first run: asks for the install folder (the app AND its data - settings, portfolio cache, AI models,
+;     the llama.cpp runtime, logs - go there, in {app}\data)
+;   * later runs and in-app updates (/UPDATE): reuse the remembered folder without asking
+; Build: iscc /DAppVersion=X.Y.Z /DExe=path\to\aura-portfolio.exe installer\aura-portfolio.iss
 ; The pictures and the icon come from assets/ (tools_dev/make_icons.py, from assets/icon.svg).
 
 #ifndef AppVersion
@@ -16,46 +13,59 @@
   #define Exe "..\target\release\aura-portfolio.exe"
 #endif
 
+#define AppName "Aura Portfolio"
+#define AppExe "aura-portfolio.exe"
+#define SetupName "AuraPortfolio-setup"
+; Marks the install folder (src/install.rs: MARKER).
+#define Marker ".aura-app"
+
 [Setup]
-; NEVER change the AppId: it's how an upgrade and the uninstaller find this install. src/install.rs has it too
-; (the Apps entry "{AppId}_is1" whose version it keeps current).
+; NEVER change the AppId: it's how an upgrade and the uninstaller find this install.
 AppId={{6208BE64-B4D0-4EDB-BF3A-510EE88F9FB5}
-AppName=Aura Portfolio
+AppName={#AppName}
 AppVersion={#AppVersion}
-AppVerName=Aura Portfolio {#AppVersion}
+AppVerName={#AppName} {#AppVersion}
 AppPublisher=Akulav
 AppPublisherURL=https://github.com/Akulav/t212-ai-dashboard
 AppSupportURL=https://github.com/Akulav/t212-ai-dashboard/issues
 AppUpdatesURL=https://github.com/Akulav/t212-ai-dashboard/releases
+AppCopyright=Made by Akulav
 VersionInfoVersion={#AppVersion}
-VersionInfoDescription=Aura Portfolio Setup
-VersionInfoProductName=Aura Portfolio
+VersionInfoCompany=Akulav
+VersionInfoDescription={#AppName} Setup
+VersionInfoProductName={#AppName}
+; Per-user install: no administrator rights.
+PrivilegesRequired=lowest
 DefaultDirName={localappdata}\Aura Portfolio
-; (Inno Setup hides the Welcome and folder pages unless told: this setup shows both)
-DisableWelcomePage=no
-DisableDirPage=no
-DisableProgramGroupPage=yes
+; Ask for the folder on the first install only; updates reuse the previous one.
+DisableDirPage=auto
 UsePreviousAppDir=yes
 DirExistsWarning=no
-PrivilegesRequired=lowest
-ArchitecturesAllowed=x64compatible
-ArchitecturesInstallIn64BitMode=x64compatible
-LicenseFile=..\LICENSE
-OutputBaseFilename=Aura-Portfolio-Setup
+DisableProgramGroupPage=yes
+DefaultGroupName={#AppName}
+OutputBaseFilename={#SetupName}
+OutputDir=..\dist
 SetupIconFile=..\assets\icon.ico
-UninstallDisplayIcon={app}\aura-portfolio.exe
-UninstallDisplayName=Aura Portfolio
-WizardStyle=modern
 WizardImageFile=..\assets\wizard-large.bmp,..\assets\wizard-large-200.bmp
 WizardSmallImageFile=..\assets\wizard-small.bmp,..\assets\wizard-small-200.bmp
-Compression=lzma2/max
-SolidCompression=yes
+UninstallDisplayIcon={app}\{#AppExe}
+UninstallDisplayName={#AppName}
+WizardStyle=modern
 ; (a running Aura Portfolio is closed - its local AI server ends with it - before its program is replaced)
 CloseApplications=force
 RestartApplications=no
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
+Compression=lzma2/max
+SolidCompression=yes
+LicenseFile=..\LICENSE
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
+
+[CustomMessages]
+english.LaunchApp=Launch Aura Portfolio
+english.DataNote=The app and everything it keeps (settings, portfolio cache, AI models, logs) will be stored in this folder only.
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
@@ -64,30 +74,56 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 ; (an install made by the 0.2.x NSIS setup in this folder: its uninstaller and Start menu folder)
 Type: files; Name: "{app}\uninstall.exe"
 Type: filesandordirs; Name: "{autoprograms}\Aura Portfolio"
-
-[Files]
-Source: "{#Exe}"; DestDir: "{app}"; DestName: "aura-portfolio.exe"; Flags: ignoreversion
-
-[Icons]
-Name: "{autoprograms}\Aura Portfolio"; Filename: "{app}\aura-portfolio.exe"; WorkingDir: "{app}"; Comment: "Trading212 portfolio analytics with a local AI analyst"
-Name: "{autoprograms}\Uninstall Aura Portfolio"; Filename: "{uninstallexe}"; WorkingDir: "{app}"
-Name: "{autodesktop}\Aura Portfolio"; Filename: "{app}\aura-portfolio.exe"; WorkingDir: "{app}"; Comment: "Trading212 portfolio analytics with a local AI analyst"; Tasks: desktopicon
-
-[Run]
-Filename: "{app}\aura-portfolio.exe"; Description: "{cm:LaunchProgram,Aura Portfolio}"; Flags: nowait postinstall skipifsilent
-
-[UninstallDelete]
-; (what the program left beside itself after an update)
 Type: files; Name: "{app}\aura-portfolio.exe.old"
 Type: files; Name: "{app}\aura-portfolio.exe.new"
 
+[Files]
+Source: "{#Exe}"; DestDir: "{app}"; DestName: "{#AppExe}"; Flags: ignoreversion
+Source: "..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
+
+[Icons]
+Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"; Comment: "Trading212 portfolio analytics with a local AI analyst - made by Akulav"
+Name: "{autoprograms}\Uninstall {#AppName}"; Filename: "{uninstallexe}"; WorkingDir: "{app}"
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"; Comment: "Trading212 portfolio analytics with a local AI analyst - made by Akulav"; Tasks: desktopicon
+
+[Run]
+; Interactive install: the usual "Launch" checkbox.
+Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"; Description: "{cm:LaunchApp}"; Flags: nowait postinstall skipifsilent
+; Silent in-app update (/UPDATE): start the new version again. It waits for the old one to let go of the data folder.
+Filename: "{app}\{#AppExe}"; Parameters: "--after-update"; WorkingDir: "{app}"; Flags: nowait; Check: IsUpdate
+
+[UninstallDelete]
+Type: files; Name: "{app}\{#Marker}"
+Type: files; Name: "{app}\aura-portfolio.exe.old"
+Type: files; Name: "{app}\aura-portfolio.exe.new"
+; The setup of an in-app update (kept in the app's own folder, never in %TEMP%).
+Type: files; Name: "{app}\data\downloads\{#SetupName}.exe"
+
 [Code]
-// One Apps entry only: this setup's. A self-made install (src/install.rs) or the old 0.2.x NSIS setup registered
-// itself as "Aura Portfolio"; that entry goes once this setup has installed.
+function IsUpdate(): Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 1 to ParamCount do
+    if CompareText(ParamStr(I), '/UPDATE') = 0 then
+      Result := True;
+end;
+
+procedure InitializeWizard();
+begin
+  WizardForm.SelectDirLabel.Caption := WizardForm.SelectDirLabel.Caption + #13#10 + CustomMessage('DataNote');
+end;
+
+// One Apps entry only: this setup's. A 1.0 self-made install or the old 0.2.x NSIS setup registered itself as
+// "Aura Portfolio"; that entry goes once this setup has installed.
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
+  begin
+    SaveStringToFile(ExpandConstant('{app}\{#Marker}'), '{#AppVersion}', False);
     RegDeleteKeyIncludingSubkeys(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\Aura Portfolio');
+  end;
 end;
 
 // The uninstaller removes the program and its shortcuts; your data stays unless you say so.
@@ -110,12 +146,17 @@ begin
   if (CurUninstallStep = usPostUninstall) and not UninstallSilent then
   begin
     if MsgBox('Aura Portfolio is uninstalled.' + #13#10#13#10 +
-              'Also delete its folder ' + ExpandConstant('{app}') + ' ?' + #13#10 +
-              'That deletes your settings, the cached portfolio history, insights, reports index, ' +
+              'Also delete its data in ' + ExpandConstant('{app}') + ' ?' + #13#10 +
+              'That deletes your settings, the cached portfolio history, insights, ' +
               'the downloaded AI models and the llama.cpp runtime for good.' + #13#10 +
               '(Your Trading212 API key is in the Windows Credential Manager, not in this folder.)' + #13#10#13#10 +
               'No keeps them: installing Aura Portfolio again brings everything back.',
               mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then
-      DelTree(ExpandConstant('{app}'), True, True, True);
+    begin
+      { Only what the app itself creates, never anything else kept in that folder. }
+      DelTree(ExpandConstant('{app}\data'), True, True, True);
+      DelTree(ExpandConstant('{app}\aura-data'), True, True, True);
+    end;
+    RemoveDir(ExpandConstant('{app}'));
   end;
 end;

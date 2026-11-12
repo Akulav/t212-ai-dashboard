@@ -1,10 +1,17 @@
 //! Updates of this program from the GitHub releases of [`GITHUB_REPO`]: checked a minute after start and every
 //! 6 hours (or when asked from the sidebar).
 //!
-//! Updating downloads this platform's **bare program** (see [`asset_name`]) next to the running one as `<exe>.new`,
-//! checks it against the release's `SHA256SUMS.txt`, renames the running program to `<exe>.old` (a running program
-//! can't be overwritten on Windows, but it can be renamed), puts the new one in its place and starts it with
-//! `--after-update`; the next start removes the `.old`. Nothing is swapped when the download or its checksum fails.
+//! Every release carries exactly one file per system plus `SHA256SUMS.txt`, and that file both installs and updates:
+//!
+//! | System        | Asset ([`asset_name`])       | Applied by                                               |
+//! |---------------|------------------------------|----------------------------------------------------------|
+//! | Windows x64   | `AuraPortfolio-setup.exe`    | running the setup silently in update mode, same folder   |
+//! | Linux x64     | `AuraPortfolio-linux-x64`    | swapping the program in the app folder                   |
+//! | macOS arm64   | `AuraPortfolio-macos-arm64`  | swapping the program inside the app bundle (re-signed)   |
+//!
+//! The download is checked against the release's `SHA256SUMS.txt` (and must be a program for this system) before
+//! anything changes. On Windows it is kept in the app folder (`data/downloads`), never in `%TEMP%`. On Linux/macOS
+//! the running program is renamed to `<exe>.old` and the new one put in its place; the next start removes the `.old`.
 //! Data, models, the runtime and settings are never touched.
 //!
 //! A program built on this computer (anything under a `target/` folder) never updates itself.
@@ -27,14 +34,38 @@ pub const FIRST_CHECK: Duration = Duration::from_secs(60);
 /// Then every …
 pub const CHECK_EVERY: Duration = Duration::from_secs(6 * 3600);
 
-/// The release file for this computer (the bare program).
+/// Windows release file: the setup (installs the first time, updates later).
+pub const ASSET_WINDOWS: &str = "AuraPortfolio-setup.exe";
+/// Linux release file: the program, which installs itself into a folder you pick.
+pub const ASSET_LINUX: &str = "AuraPortfolio-linux-x64";
+/// macOS release file: the program, which installs itself as an app into a folder you pick.
+pub const ASSET_MACOS: &str = "AuraPortfolio-macos-arm64";
+/// Checksums of the three files above.
+pub const ASSET_SUMS: &str = "SHA256SUMS.txt";
+
+/// The release file for this computer.
 pub fn asset_name() -> &'static str {
     if cfg!(windows) {
-        "aura-portfolio-windows-x64.exe"
+        ASSET_WINDOWS
     } else if cfg!(target_os = "macos") {
-        "aura-portfolio-macos-arm64"
+        ASSET_MACOS
     } else {
-        "aura-portfolio-linux-x64"
+        ASSET_LINUX
+    }
+}
+
+/// Does `head` (the first bytes of a download) look like a program for this system?
+pub fn looks_like_program(head: &[u8]) -> bool {
+    if cfg!(windows) {
+        head.starts_with(b"MZ")
+    } else if cfg!(target_os = "macos") {
+        head.len() >= 4
+            && matches!(
+                &head[..4],
+                [0xcf, 0xfa, 0xed, 0xfe] | [0xca, 0xfe, 0xba, 0xbe]
+            )
+    } else {
+        head.starts_with(b"\x7fELF")
     }
 }
 
@@ -128,7 +159,7 @@ struct Asset {
 pub fn parse_release(json: &str) -> Result<UpdateInfo> {
     let r: Release = serde_json::from_str(json).context("GitHub's answer")?;
     let find = |name: &str| r.assets.iter().find(|a| a.name == name);
-    let (asset, sums) = (find(asset_name()), find("SHA256SUMS.txt"));
+    let (asset, sums) = (find(asset_name()), find(ASSET_SUMS));
     Ok(UpdateInfo {
         version: r.tag_name.trim_start_matches('v').to_string(),
         html_url: r.html_url,
@@ -267,11 +298,18 @@ pub fn clean_up(exe: &Path) {
     }
 }
 
-/// Downloads, verifies and swaps in the new program. Afterwards [`restart`] starts it.
+/// Where the downloaded Windows setup waits for [`restart`]: inside the app folder's `data/downloads`.
+pub fn staged_setup(downloads: &Path) -> PathBuf {
+    downloads.join(ASSET_WINDOWS)
+}
+
+/// Downloads and verifies this system's release file. Windows keeps the setup in `downloads` for [`restart`];
+/// Linux/macOS swap the new program in right away. Afterwards [`restart`] starts the new version.
 pub async fn install(
     http: &Client,
     info: &UpdateInfo,
     token: Option<&str>,
+    downloads: &Path,
     mut on_progress: impl FnMut(Progress),
 ) -> Result<()> {
     let exe = std::env::current_exe().context("where is this program?")?;
@@ -305,6 +343,15 @@ pub async fn install(
     if got != want {
         bail!("the download doesn't match the release's checksum: not installed");
     }
+    if !looks_like_program(&data) {
+        bail!("the download is not a program for this system: not installed");
+    }
+    if cfg!(windows) {
+        std::fs::create_dir_all(downloads).context("couldn't make the downloads folder")?;
+        std::fs::write(staged_setup(downloads), &data).context("couldn't save the setup")?;
+        tracing::info!("downloaded the setup for {}", info.version);
+        return Ok(());
+    }
     let new = sibling(&exe, "new");
     std::fs::write(&new, &data).context("couldn't save the new program")?;
     #[cfg(unix)]
@@ -321,11 +368,40 @@ pub async fn install(
     Ok(())
 }
 
-/// Starts the (new) program with `--after-update` — it waits for this one to release the data folder — and exits.
+/// Applies the update and exits. Windows runs the downloaded setup silently in update mode into this program's
+/// folder (it closes this program, installs and starts the new version with `--after-update`); Linux/macOS start the
+/// already swapped-in program with `--after-update` (on macOS after re-signing the app bundle). The new program waits
+/// for this one to release the data folder.
 ///
 /// Call [`LlmManager::shutdown`](crate::llm::LlmManager::shutdown) first.
-pub fn restart() -> Result<()> {
+pub fn restart(downloads: &Path) -> Result<()> {
     let exe = std::env::current_exe()?;
+    if cfg!(windows) {
+        let setup = staged_setup(downloads);
+        let dir = exe.parent().context("where is this program?")?;
+        let mut cmd = std::process::Command::new(&setup);
+        cmd.args([
+            "/VERYSILENT",
+            "/SUPPRESSMSGBOXES",
+            "/NORESTART",
+            "/CLOSEAPPLICATIONS",
+            "/UPDATE",
+        ])
+        .arg(format!("/FROM={}", crate::VERSION))
+        .arg(format!("/DIR={}", dir.display()));
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x0000_0008 | 0x0000_0200); // DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+        }
+        cmd.spawn()
+            .with_context(|| format!("couldn't start {}", setup.display()))?;
+        std::process::exit(0);
+    }
+    #[cfg(target_os = "macos")]
+    if let Some(app) = crate::install::bundle_of(&exe) {
+        crate::install::sign_bundle(&app);
+    }
     let mut cmd = std::process::Command::new(exe);
     cmd.arg("--after-update");
     #[cfg(windows)]

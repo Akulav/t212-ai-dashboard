@@ -1,7 +1,7 @@
 //! Aura Portfolio — the program.
 //!
 //! ```text
-//!   aura-portfolio                  open the app (started outside an app folder, it first installs itself)
+//!   aura-portfolio                  open the app (Linux/macOS, outside an app folder: first asks where to install)
 //!   aura-portfolio --here           run in the program's own folder, don't install it
 //!   aura-portfolio --dir <folder>   use another app folder than the program's own (data in <folder>/data)
 //!   aura-portfolio --uninstall      take it out of the app list (the folder only if you say so)
@@ -9,8 +9,8 @@
 //!   aura-portfolio --check-update   ask GitHub for the latest release and say whether it's newer
 //! ```
 //!
-//! Start-up order: self-install (`install.rs`) → remove what the last update left (`.old`) → one instance per app
-//! folder (`data/.aura.lock`) → keep the Apps entry's version current → the window. The safety nets that guarantee the
+//! Start-up order: install or update offer (`install.rs`, Linux/macOS) → remove what the last update left (`.old`,
+//! a downloaded setup) → one instance per app folder (`data/.aura.lock`) → the window. The safety nets that guarantee the
 //! `llama-server` child dies with us (panic hook, final shutdown, OS-level lifetime binding in `llm::server`) stay.
 
 // Hide the console window on Windows release builds.
@@ -84,18 +84,18 @@ fn this_exe() -> Option<PathBuf> {
         .map(|p| plain(&p))
 }
 
-/// The app folder: `--dir`, else the program's own folder.
+/// The app folder: `--dir`, else the program's own folder (for a program inside `X.app`, the folder holding it).
 fn app_dir(a: &Args) -> PathBuf {
     if let Some(d) = &a.dir {
         return d.clone();
     }
     this_exe()
-        .and_then(|p| p.parent().map(Path::to_path_buf))
+        .and_then(|p| install::root_of_exe(&p))
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
-/// Started outside an app folder (Downloads): install into this computer's app folder and start from there.
-/// `true` = done here (the installed program runs, or was already running).
+/// Linux/macOS, started outside an app folder (Downloads): ask where to install (or whether to update the install
+/// that's there), install, and start the installed program. `true` = done here (another process runs the app).
 fn install_first(a: &Args) -> bool {
     if a.here || a.after_update || a.dir.is_some() || std::env::var_os("AURA_DATA_DIR").is_some() {
         return false;
@@ -104,18 +104,35 @@ fn install_first(a: &Args) -> bool {
     if updater::self_built(&exe) {
         return false;
     }
-    let Some(target) = exe.parent().and_then(install::target_for) else {
-        return false;
-    };
     let passed: Vec<String> = std::env::args().skip(1).collect();
+    let offer = install::offer_for(&exe);
+    let target = match offer {
+        install::Offer::None => return false,
+        install::Offer::OpenInstalled { root } => {
+            return match install::start_installed(&root, &passed) {
+                Ok(()) => true,
+                Err(e) => {
+                    install::notice(&e);
+                    false
+                }
+            };
+        }
+        offer => match ui::install_window::ask(offer) {
+            ui::install_window::Choice::Install(dir) => dir,
+            ui::install_window::Choice::Cancel => return true,
+            ui::install_window::Choice::RunHere => {
+                // (a fresh process: the install window's event loop has ended and can't be reused)
+                let mut cmd = std::process::Command::new(&exe);
+                cmd.arg("--here").args(&passed);
+                return cmd.spawn().is_ok();
+            }
+        },
+    };
     match install::install_and_start(&exe, &target, &passed) {
-        Ok(done) => done,
+        Ok(()) => true,
         Err(e) => {
-            install::notice(&format!(
-                "Couldn't install into {}: {e}\n\nRunning from this folder instead.",
-                target.display()
-            ));
-            false
+            install::notice(&format!("Couldn't install into {}: {e}", target.display()));
+            true
         }
     }
 }
@@ -200,7 +217,7 @@ fn main() -> anyhow::Result<()> {
             None
         }
     };
-    install::refresh(&dir); // (its Apps entry shows the version an update brought)
+    let _ = std::fs::remove_file(updater::staged_setup(&paths.downloads)); // (the setup of the last update)
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()

@@ -8,6 +8,7 @@ pub mod dividends;
 pub mod format;
 pub mod holdings;
 pub mod insights;
+pub mod install_window;
 pub mod settings;
 pub mod theme;
 pub mod widgets;
@@ -328,11 +329,12 @@ impl AuraApp {
         let state = self.update.clone();
         let http = self.services.http.clone();
         let token = updater::github_token(&self.services.paths.root);
+        let downloads = self.services.paths.downloads.clone();
         *state.lock() = UpdateState::Downloading(info.clone(), Default::default());
         self.services.rt.spawn(async move {
             let progress_state = state.clone();
             let progress_info = info.clone();
-            let result = updater::install(&http, &info, token.as_deref(), move |p| {
+            let result = updater::install(&http, &info, token.as_deref(), &downloads, move |p| {
                 *progress_state.lock() = UpdateState::Downloading(progress_info.clone(), p);
             })
             .await;
@@ -391,7 +393,7 @@ impl AuraApp {
                 if ui.add(btn).clicked() {
                     self.save_settings();
                     self.services.llm.shutdown();
-                    if let Err(e) = updater::restart() {
+                    if let Err(e) = updater::restart(&self.services.paths.downloads) {
                         *self.update.lock() = UpdateState::Failed(format!("{e:#}"));
                     }
                 }

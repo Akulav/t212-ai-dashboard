@@ -1,10 +1,11 @@
-//! Filesystem layout. Everything Aura keeps lives in **the app folder's `data` folder**, next to the program:
+//! Filesystem layout. Everything Aura keeps lives in **the app folder's `data` folder**, next to the program. The app
+//! folder is the one you chose when installing (see [`crate::install`]); the suggested defaults are:
 //!
-//! | System | App folder (the setup's default / self-install target) |
+//! | System | Suggested app folder |
 //! |---|---|
 //! | Windows | `%LOCALAPPDATA%\Aura Portfolio` |
 //! | Linux | `$XDG_DATA_HOME/aura-portfolio` or `~/.local/share/aura-portfolio` |
-//! | macOS | `~/Library/Application Support/Aura Portfolio` |
+//! | macOS | `~/Applications/Aura Portfolio` (holding `Aura Portfolio.app`) |
 //!
 //! `data/` holds settings, the portfolio cache, insights, models, the llama.cpp runtime, logs and downloads. Updates
 //! replace only the program; uninstalling asks before deleting the folder. Trading212 credentials are never here —

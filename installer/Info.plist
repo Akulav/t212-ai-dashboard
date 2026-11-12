@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Aura Portfolio.app in the macOS disk image (release.yml fills in @VERSION@). The program inside installs itself into
-     ~/Library/Application Support/Aura Portfolio on its first start and runs from there (src/install.rs).
-     A normal window app: it has a Dock icon (no LSUIElement). -->
+<!-- Info.plist of Aura Portfolio.app, which the macOS program writes around itself when it installs into the folder
+     you pick (src/install.rs fills in @VERSION@). A normal window app: it has a Dock icon (no LSUIElement). -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
